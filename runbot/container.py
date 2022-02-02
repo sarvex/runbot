@@ -15,9 +15,15 @@ import logging
 import os
 import re
 import subprocess
-
+import tempfile
 
 _logger = logging.getLogger(__name__)
+
+try:
+    import docker
+except ModuleNotFoundError:
+    _logger.info('Module docker not found !')
+
 DOCKERUSER = """
 RUN groupadd -g %(group_id)s odoo \\
 && useradd -u %(user_id)s -g odoo -G audio,video odoo \\
@@ -103,14 +109,27 @@ def _docker_build(build_dir, image_tag):
     """Build the docker image
     :param build_dir: the build directory that contains Dockerfile.
     :param image_tag: name used to tag the resulting docker image
+    :return: tuple(success, msg) where success is a boolean and msg is the error message or None
     """
     # synchronise the current user with the odoo user inside the Dockerfile
     with open(os.path.join(build_dir, 'Dockerfile'), 'a') as df:
         df.write(DOCKERUSER)
-    log_path = os.path.join(build_dir, 'docker_build.txt')
-    logs = open(log_path, 'w')
-    dbuild = subprocess.Popen(['docker', 'build', '--tag', image_tag, '.'], stdout=logs, stderr=logs, cwd=build_dir)
-    return dbuild.wait()
+    docker_client = docker.from_env()
+    try:
+        docker_client.images.build(path=build_dir, tag=image_tag)
+    except docker.errors.APIError as e:
+        _logger.error('Build of image %s failed with this API error:', image_tag)
+        _logger.error('    "%s"', e.explanation)
+        return (False, e.explanation)
+    except docker.errors.BuildError as e:
+        _logger.error('Build of image %s failed with this BUILD error:', image_tag)
+        _logger.error('   "%s"', e.msg)
+        with tempfile.NamedTemporaryFile(mode='w',prefix='docker_build_log', delete=False, dir=build_dir) as logfile:
+            for log_line in e.build_log:
+                logfile.write(log_line.get('stream') or '')
+        return (False, e.msg)
+    _logger.info('Dockerfile %s finished build', image_tag)
+    return (True, None)
 
 
 def docker_run(*args, **kwargs):
@@ -146,26 +165,16 @@ def _docker_run(cmd=False, log_path=False, build_dir=False, container_name=False
     open(os.path.join(build_dir, 'exist-%s' % container_name), 'w+').close()
     logs.write("Docker command:\n%s\n=================================================\n" % cmd_object)
     # create start script
-    docker_command = [
-        'docker', 'run', '--rm',
-        '--name', container_name,
-        '--volume=/var/run/postgresql:/var/run/postgresql',
-        '--volume=%s:/data/build' % build_dir,
-        '--shm-size=128m',
-        '--init',
-    ]
-
-    if memory:
-        docker_command.append('--memory=%s' % memory)
+    volumes = {
+        '/var/run/postgresql': {'bind': '/var/run/postgresql', 'mode': 'rw'},
+        f'{build_dir}': {'bind': '/data/build', 'mode': 'rw'},
+        f'{log_path}': {'bind': '/data/buildlogs.txt', 'mode': 'rw'}
+    }
 
     if ro_volumes:
         for dest, source in ro_volumes.items():
             logs.write("Adding readonly volume '%s' pointing to %s \n" % (dest, source))
-            docker_command.append('--volume=%s:/data/build/%s:ro' % (source, dest))
-
-    if env_variables:
-        for var in env_variables:
-            docker_command.append('-e=%s' % var)
+            volumes.update({source: {'bind': dest, 'mode': 'ro'}})
 
     serverrc_path = os.path.expanduser('~/.openerp_serverrc')
     odoorc_path = os.path.expanduser('~/.odoorc')
@@ -174,15 +183,21 @@ def _docker_run(cmd=False, log_path=False, build_dir=False, container_name=False
     rc_path = os.path.join(build_dir, '.odoorc')
     with open(rc_path, 'w') as rc_file:
         rc_file.write(rc_content)
-    docker_command.extend(['--volume=%s:/home/odoo/.odoorc:ro' % rc_path])
+    volumes.append({rc_path: {'bind': '/home/odoo/.odoorc', 'mode': 'ro'}})
 
+    ports = {}
     if exposed_ports:
         for dp, hp in enumerate(exposed_ports, start=8069):
-            docker_command.extend(['-p', '127.0.0.1:%s:%s' % (hp, dp)])
+            ports.update({dp: f'127.0.0.1:{hp}'})
+
+    ulimits = []
     if cpu_limit:
-        docker_command.extend(['--ulimit', 'cpu=%s' % int(cpu_limit)])
-    docker_command.extend([image_tag, '/bin/bash', '-c', "%s" % run_cmd])
-    subprocess.Popen(docker_command, stdout=logs, stderr=logs, preexec_fn=preexec_fn, close_fds=False, cwd=build_dir)
+        ulimits.append(docker.types.Ulimit(name='cpu', soft=cpu_limit, hard=cpu_limit))
+
+    logs.close()
+    docker_client = docker.from_env()
+    docker_client.containers.run(image_tag, name=container_name, volumes=volumes, shm_size='128m', mem_limit=memory, ports=ports, ulimits=ulimits,
+                                 environement=env_variables, init=True, command=[f'/bin/bash', '-c', 'exec &>> /data/buildlogs.txt ;{cmd.build()}'], auto_remove=True, detach=True)
     _logger.info('Started Docker container %s', container_name)
     return
 
