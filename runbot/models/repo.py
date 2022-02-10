@@ -420,6 +420,8 @@ class Repo(models.Model):
         if new_branch_values:
             _logger.info('Creating new branches')
             new_branches = self.env['runbot.branch'].create(new_branch_values)
+            new_branches._setup_branch_infos()
+            new_branches._setup_bundle_id()
             for branch in new_branches:
                 ref_branches[branch.ref()] = branch
         return ref_branches
@@ -449,7 +451,7 @@ class Repo(models.Model):
                 if not branch.alive:
                     if branch.is_pr:
                         _logger.info('Recomputing infos of dead pr %s', branch.name)
-                        branch._compute_branch_infos()
+                        branch._setup_branch_infos()
                     else:
                         branch.alive = True
 
