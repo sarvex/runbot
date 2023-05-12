@@ -72,9 +72,7 @@ class Runbot(models.AbstractModel):
         reserved_slots = self.env['runbot.build'].search_count(domain_host + [('local_state', 'in', ('testing', 'pending'))])
         assignable_slots = (nb_worker - reserved_slots)
         if assignable_slots > 0:
-            allocated = self._allocate_builds(host, assignable_slots, domain)
-            if allocated:
-
+            if allocated := self._allocate_builds(host, assignable_slots, domain):
                 _logger.info('Builds %s where allocated to runbot', allocated)
 
     def _get_builds_to_init(self, host):
@@ -150,8 +148,7 @@ class Runbot(models.AbstractModel):
 
     def _reload_nginx(self):
         env = self.env
-        settings = {}
-        settings['port'] = config.get('http_port')
+        settings = {'port': config.get('http_port')}
         settings['runbot_domain'] = self._domain()
         settings['runbot_static'] = os.path.join(get_module_resource('runbot', 'static'), '')
         nginx_dir = os.path.join(self._root(), 'nginx')
@@ -160,9 +157,7 @@ class Runbot(models.AbstractModel):
         settings['fqdn'] = fqdn()
 
         icp = env['ir.config_parameter'].sudo()
-        nginx = icp.get_param('runbot.runbot_nginx', True)  # or just force nginx?
-
-        if nginx:
+        if nginx := icp.get_param('runbot.runbot_nginx', True):
             settings['builds'] = env['runbot.build'].search([('local_state', '=', 'running'), ('host', '=', fqdn())])
 
             nginx_config = env['ir.ui.view'].render_template("runbot.nginx_config", settings)
@@ -204,7 +199,6 @@ class Runbot(models.AbstractModel):
         This method is the default cron for new commit discovery and build sheduling.
         The cron runs for a long time to avoid spamming logs
         """
-        pull_info_failures = {}
         start_time = time.time()
         timeout = self._get_cron_period()
         get_param = self.env['ir.config_parameter'].get_param
@@ -224,6 +218,7 @@ class Runbot(models.AbstractModel):
             self._docker_cleanup()
         _logger.info('Starting loop')
         if runbot_do_schedule or runbot_do_fetch:
+            pull_info_failures = {}
             while time.time() - start_time < timeout:
                 if runbot_do_fetch:
                     self._fetch_loop_turn(host, pull_info_failures)
@@ -343,13 +338,14 @@ class Runbot(models.AbstractModel):
                 to_keep = list(to_keep)
                 cannot_be_deleted_path = list(cannot_be_deleted_path)
                 for source_dir in to_delete:
-                    _logger.info('Deleting source: %s' % source_dir)
+                    _logger.info(f'Deleting source: {source_dir}')
                     assert 'static' in source_dir
                     shutil.rmtree(source_dir)
-                _logger.info('%s/%s source folder where deleted (%s kept)' % (len(to_delete), len(to_delete+to_keep), len(to_keep)))
+                _logger.info(
+                    f'{len(to_delete)}/{len(to_delete + to_keep)} source folder where deleted ({len(to_keep)} kept)'
+                )
         except:
             _logger.exception('An exception occured while cleaning sources')
-            pass
 
     def _docker_cleanup(self):
         _logger.info('Docker cleaning')
@@ -358,23 +354,22 @@ class Runbot(models.AbstractModel):
         containers = {}
         ignored = []
         for dc in docker_ps_result:
-            build = self.env['runbot.build']._build_from_dest(dc)
-            if build:
+            if build := self.env['runbot.build']._build_from_dest(dc):
                 containers[build.id] = dc
         if containers:
             candidates = self.env['runbot.build'].search([('id', 'in', list(containers.keys())), ('local_state', '=', 'done')])
             for c in candidates:
                 _logger.info('container %s found running with build state done', containers[c.id])
                 docker_stop(containers[c.id], c._path())
-        ignored = {dc for dc in docker_ps_result if not dest_reg.match(dc)}
-        if ignored:
+        if ignored := {dc for dc in docker_ps_result if not dest_reg.match(dc)}:
             _logger.info('docker (%s) not deleted because not dest format', list(ignored))
 
     def warning(self, message, *args):
         if args:
             message = message % args
-        existing = self.env['runbot.warning'].search([('message', '=', message)], limit=1)
-        if existing:
+        if existing := self.env['runbot.warning'].search(
+            [('message', '=', message)], limit=1
+        ):
             existing.count += 1
         else:
             return self.env['runbot.warning'].create({'message': message})

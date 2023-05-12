@@ -125,17 +125,17 @@ class RunbotErrorLog(models.Model):
 
     def _compute_repo_short_name(self):
         for l in self:
-            l.repo_short_name = '%s/%s' % (l.repo_id.owner, l.repo_id.repo_name)
+            l.repo_short_name = f'{l.repo_id.owner}/{l.repo_id.repo_name}'
 
     def _compute_build_url(self):
         for l in self:
-            l.build_url = '/runbot/build/%s' % l.build_id.id
+            l.build_url = f'/runbot/build/{l.build_id.id}'
 
     def action_goto_build(self):
         self.ensure_one()
         return {
             "type": "ir.actions.act_url",
-            "url": "runbot/build/%s" % self.build_id.id,
+            "url": f"runbot/build/{self.build_id.id}",
             "target": "new",
         }
 
@@ -162,13 +162,13 @@ class RunbotErrorLog(models.Model):
             col_name = 'id' if operator == 'in' else 'name'
             where_condition = "WHERE slot.build_id = build.id AND bundle.%s %s any(%%s));" if operator == 'in' else "WHERE slot.build_id = build.id AND bundle.%s %s %%s);"
             operator = '=' if operator == 'in' else operator
-            where_condition = where_condition % (col_name, operator)
-            query = query % where_condition
+            where_condition %= (col_name, operator)
+            query %= where_condition
             self.env.cr.execute(query, (value,))
             build_ids = [t[0] for t in self.env.cr.fetchall()]
             return [('top_parent_id', 'in', build_ids)]
 
-        raise UserError('Operator `%s` not implemented for bundle search' % operator)
+        raise UserError(f'Operator `{operator}` not implemented for bundle search')
 
     def search_count(self, args):
        return 4242  # hack to speed up the view

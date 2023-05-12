@@ -58,7 +58,10 @@ def test_existing_pr_disabled_branch(env, project, make_repo, setreviewers, conf
     assert pr.comments == [
         (users['reviewer'], "hansen r+"),
         seen(env, pr, users),
-        (users['user'], "This PR targets the disabled branch %s:other, it can not be merged." % repo.name),
+        (
+            users['user'],
+            f"This PR targets the disabled branch {repo.name}:other, it can not be merged.",
+        ),
     ], "reopening a PR to an inactive branch should send feedback, but not closing it"
 
     with repo:
@@ -96,7 +99,10 @@ def test_new_pr_no_branch(env, project, make_repo, setreviewers, users):
         ('number', '=', pr.number),
     ]), "the PR should not have been created in the backend"
     assert pr.comments == [
-        (users['user'], "This PR targets the un-managed branch %s:other, it can not be merged." % repo.name),
+        (
+            users['user'],
+            f"This PR targets the un-managed branch {repo.name}:other, it can not be merged.",
+        )
     ]
 
 def test_new_pr_disabled_branch(env, project, make_repo, setreviewers, users):
@@ -131,7 +137,10 @@ def test_new_pr_disabled_branch(env, project, make_repo, setreviewers, users):
     assert pr_id, "the PR should have been created in the backend"
     assert pr_id.state == 'opened'
     assert pr.comments == [
-        (users['user'], "This PR targets the disabled branch %s:other, it can not be merged." % repo.name),
+        (
+            users['user'],
+            f"This PR targets the disabled branch {repo.name}:other, it can not be merged.",
+        ),
         seen(env, pr, users),
     ]
 

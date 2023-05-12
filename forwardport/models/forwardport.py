@@ -49,9 +49,7 @@ class ForwardPortTasks(models.Model, Queue):
 
     def _process_item(self):
         batch = self.batch_id
-        newbatch = batch.prs._port_forward()
-
-        if newbatch:
+        if newbatch := batch.prs._port_forward():
             _logger.info(
                 "Processing %s (from %s): %s (%s) -> %s (%s)",
                 self.id, self.source,
@@ -63,13 +61,14 @@ class ForwardPortTasks(models.Model, Queue):
                 for pr in newbatch.prs:
                     if not pr.parent_id:
                         break
-                    newchild = pr.search([
-                        ('parent_id', '=', pr.parent_id.id),
-                        ('id', '!=', pr.id),
-                    ])
-                    if newchild:
+                    if newchild := pr.search(
+                        [
+                            ('parent_id', '=', pr.parent_id.id),
+                            ('id', '!=', pr.id),
+                        ]
+                    ):
                         newchild.parent_id = pr.id
-        else: # reached end of seq (or batch is empty)
+        else:
             # FIXME: or configuration is fucky so doesn't want to FP (maybe should error and retry?)
             _logger.info(
                 "Processing %s (from %s): %s (%s) -> end of the sequence",
@@ -219,7 +218,7 @@ class DeleteBranches(models.Model, Queue):
             return # probably don't have access to arbitrary repos
 
         github = GH(token=repository.project_id.fp_github_token, repo=fp_remote)
-        refurl = 'git/refs/heads/' + branch
+        refurl = f'git/refs/heads/{branch}'
         ref = github('get', refurl, check=False)
         if ref.status_code != 200:
             _deleter.info("✘ branch already deleted (%s)", ref.json())
@@ -243,9 +242,7 @@ class DeleteBranches(models.Model, Queue):
             return
 
         r = github('delete', refurl, check=False)
-        assert r.status_code == 204, \
-            "Tried to delete branch %s of %s, got %s" % (
-                branch, self.pr_id.display_name,
-                r.json()
-            )
+        assert (
+            r.status_code == 204
+        ), f"Tried to delete branch {branch} of {self.pr_id.display_name}, got {r.json()}"
         _deleter.info('✔ deleted branch %s of PR %s', self.pr_id.label, self.pr_id.display_name)

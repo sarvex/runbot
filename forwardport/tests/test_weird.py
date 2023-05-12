@@ -177,7 +177,7 @@ def test_failed_staging(env, config, make_repo):
     with prod:
         prod.post_status(pr3_id.head, 'success', 'legal/cla')
         prod.post_status(pr3_id.head, 'success', 'ci/runbot')
-        pr3.post_comment('%s r+' % proj.fp_github_name, reviewer)
+        pr3.post_comment(f'{proj.fp_github_name} r+', reviewer)
     env.run_crons()
 
     prod.commit('staging.c')
@@ -286,9 +286,9 @@ class TestNotAllBranches:
         """ A merge in A.a should be forward-ported to A.b and A.c
         """
         project, a, a_dev, b, _ = repos
-        with a, a_dev:
+        with (a, a_dev):
             [c] = a_dev.make_commits('a', Commit('pr', tree={'pr': '1'}), ref='heads/change')
-            pr = a.make_pr(target='a', title="a pr", head=a_dev.owner + ':change')
+            pr = a.make_pr(target='a', title="a pr", head=f'{a_dev.owner}:change')
             a.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         p = env['runbot_merge.pull_requests'].search([('repository.name', '=', a.name), ('number', '=', pr.number)])
@@ -312,8 +312,8 @@ class TestNotAllBranches:
         with a:
             a.post_status(pr2.head, 'success', 'ci/runbot')
             a.get_pr(pr2.number).post_comment(
-                '%s r+' % project.fp_github_name,
-                config['role_reviewer']['token'])
+                f'{project.fp_github_name} r+', config['role_reviewer']['token']
+            )
         env.run_crons()
         assert pr1.staging_id
         assert pr2.staging_id
@@ -333,9 +333,9 @@ class TestNotAllBranches:
         """ A merge in B.a should "skip ahead" to B.c
         """
         project, a, _, b, b_dev = repos
-        with b, b_dev:
+        with (b, b_dev):
             [c] = b_dev.make_commits('a', Commit('pr', tree={'pr': '1'}), ref='heads/change')
-            pr = b.make_pr(target='a', title="a pr", head=b_dev.owner + ':change')
+            pr = b.make_pr(target='a', title="a pr", head=f'{b_dev.owner}:change')
             b.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
@@ -351,8 +351,8 @@ class TestNotAllBranches:
         with b:
             b.post_status(pr1.head, 'success', 'ci/runbot')
             b.get_pr(pr1.number).post_comment(
-                '%s r+' % project.fp_github_name,
-                config['role_reviewer']['token'])
+                f'{project.fp_github_name} r+', config['role_reviewer']['token']
+            )
         env.run_crons()
         with a, b:
             a.post_status('staging.c', 'success', 'ci/runbot')
@@ -367,14 +367,14 @@ class TestNotAllBranches:
         """ A merge in A.a, B.a should... not be forward-ported at all?
         """
         project, a, a_dev, b, b_dev = repos
-        with a, a_dev:
+        with (a, a_dev):
             [c_a] = a_dev.make_commits('a', Commit('pr a', tree={'pr': 'a'}), ref='heads/change')
-            pr_a = a.make_pr(target='a', title='a pr', head=a_dev.owner + ':change')
+            pr_a = a.make_pr(target='a', title='a pr', head=f'{a_dev.owner}:change')
             a.post_status(c_a, 'success', 'ci/runbot')
             pr_a.post_comment('hansen r+', config['role_reviewer']['token'])
-        with b, b_dev:
+        with (b, b_dev):
             [c_b] = b_dev.make_commits('a', Commit('pr b', tree={'pr': 'b'}), ref='heads/change')
-            pr_b = b.make_pr(target='a', title='b pr', head=b_dev.owner + ':change')
+            pr_b = b.make_pr(target='a', title='b pr', head=f'{b_dev.owner}:change')
             b.post_status(c_b, 'success', 'ci/runbot')
             pr_b.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
@@ -424,13 +424,14 @@ def test_new_intermediate_branch(env, config, make_repo):
     def validate(commit):
         prod.post_status(commit, 'success', 'ci/runbot')
         prod.post_status(commit, 'success', 'legal/cla')
+
     project, prod, _ = make_basic(env, config, make_repo, fp_token=True, fp_remote=True)
     original_c_tree = prod.read_tree(prod.commit('c'))
     prs = []
     with prod:
         for i in ['0', '1', '2']:
-            prod.make_commits('a', Commit(i, tree={i:i}), ref='heads/branch%s' % i)
-            pr = prod.make_pr(target='a', head='branch%s' % i)
+            prod.make_commits('a', Commit(i, tree={i:i}), ref=f'heads/branch{i}')
+            pr = prod.make_pr(target='a', head=f'branch{i}')
             prs.append(pr)
             validate(pr.head)
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -532,8 +533,9 @@ def test_new_intermediate_branch(env, config, make_repo):
         for pr in fps:
             assert pr.target.name == 'c'
             prod.get_pr(pr.number).post_comment(
-                '%s r+' % project.fp_github_name,
-                config['role_reviewer']['token'])
+                f'{project.fp_github_name} r+',
+                config['role_reviewer']['token'],
+            )
     assert all(p.state == 'merged' for p in PRs.browse(sources)), \
         "all sources should be merged"
     assert all(p.state == 'ready' for p in PRs.search([('id', 'not in', sources)])),\
@@ -541,7 +543,7 @@ def test_new_intermediate_branch(env, config, make_repo):
     env.run_crons()
     with prod:
         for target in ['b', 'new', 'c']:
-            validate('staging.' + target)
+            validate(f'staging.{target}')
     env.run_crons()
     assert all(p.state == 'merged' for p in PRs.search([])), \
         "All PRs should be merged now"
@@ -563,7 +565,7 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
     other_token = other_user['token']
     other = prod.fork(token=other_token)
 
-    with prod, other:
+    with (prod, other):
         [c] = other.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/change')
         pr = prod.make_pr(
             target='a', title='my change',
@@ -575,7 +577,7 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
         pr.open(other_token)
         prod.post_status(c, 'success', 'legal/cla')
         prod.post_status(c, 'success', 'ci/runbot')
-        pr.post_comment('%s close' % project.fp_github_name, other_token)
+        pr.post_comment(f'{project.fp_github_name} close', other_token)
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     assert pr.state == 'open'
@@ -593,7 +595,7 @@ def test_author_can_close_via_fwbot(env, config, make_repo):
         pr1.close(other_token) # what the fuck?
     # use can close via fwbot
     with prod:
-        pr1.post_comment('%s close' % project.fp_github_name, other_token)
+        pr1.post_comment(f'{project.fp_github_name} close', other_token)
     env.run_crons()
     assert pr1.state == 'closed'
     assert pr1_id.state == 'closed'
@@ -606,7 +608,10 @@ def test_skip_ci_all(env, config, make_repo):
         pr = prod.make_pr(target='a', head='change')
         prod.post_status(pr.head, 'success', 'legal/cla')
         prod.post_status(pr.head, 'success', 'ci/runbot')
-        pr.post_comment('%s skipci' % project.fp_github_name, config['role_reviewer']['token'])
+        pr.post_comment(
+            f'{project.fp_github_name} skipci',
+            config['role_reviewer']['token'],
+        )
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()
     assert env['runbot_merge.pull_requests'].search([
@@ -649,8 +654,7 @@ def test_skip_ci_next(env, config, make_repo):
     pr0_id, pr1_id = env['runbot_merge.pull_requests'].search([], order='number')
     with prod:
         prod.get_pr(pr1_id.number).post_comment(
-            '%s skipci' % project.fp_github_name,
-            config['role_user']['token']
+            f'{project.fp_github_name} skipci', config['role_user']['token']
         )
     assert pr0_id.fw_policy == 'skipci'
     env.run_crons()
@@ -760,7 +764,7 @@ def test_approve_draft(env, config, make_repo, users):
 
     with prod:
         pr.draft = False
-    assert pr.draft is False
+    assert not pr.draft
     with prod:
         pr.post_comment('hansen r+', config['role_reviewer']['token'])
     env.run_crons()

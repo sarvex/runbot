@@ -14,10 +14,12 @@ class MergebotReviewerProvisioning(http.Controller):
     @from_role('accounts')
     @http.route(['/runbot_merge/get_reviewers'], type='json', auth='public')
     def fetch_reviewers(self, **kwargs):
-        reviewers = request.env['res.partner.review'].sudo().search([
-            '|', ('review', '=', True), ('self_review', '=', True)
-        ]).mapped('partner_id.github_login')
-        return reviewers
+        return (
+            request.env['res.partner.review']
+            .sudo()
+            .search(['|', ('review', '=', True), ('self_review', '=', True)])
+            .mapped('partner_id.github_login')
+        )
 
     @from_role('accounts')
     @http.route(['/runbot_merge/remove_reviewers'], type='json', auth='public', methods=['POST'])

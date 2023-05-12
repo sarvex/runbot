@@ -63,7 +63,7 @@ class BuildError(models.Model):
         vals.update({'cleaned_content': cleaned_content,
                      'fingerprint': self._digest(cleaned_content)
         })
-        if not 'team_id' in vals and 'module_name' in vals:
+        if 'team_id' not in vals and 'module_name' in vals:
             vals.update({'team_id': self.env['runbot.team']._get_team(vals['module_name'])})
         return super().create(vals)
 
@@ -152,7 +152,7 @@ class BuildError(models.Model):
             del hash_dict[build_error.fingerprint]
 
         # create an error for the remaining entries
-        for fingerprint, logs in hash_dict.items():
+        for logs in hash_dict.values():
             build_errors |= self.env['runbot.build.error'].create({
                 'content': logs[0].message,
                 'module_name': logs[0].name,
@@ -196,7 +196,7 @@ class BuildError(models.Model):
 
     @api.model
     def disabling_tags(self):
-        return ['-%s' % tag for tag in self.test_tags_list()]
+        return [f'-{tag}' for tag in self.test_tags_list()]
 
     def _search_version(self, operator, value):
         return [('build_ids.version_id', operator, value)]
@@ -231,10 +231,7 @@ class ErrorRegex(models.Model):
 
     def r_search(self, s):
         """ Return True if one of the regex is found in s """
-        for filter in self:
-            if re.search(filter.regex, s):
-                return True
-        return False
+        return any(re.search(filter.regex, s) for filter in self)
 
 
 class RunbotTeam(models.Model):
@@ -265,9 +262,17 @@ class RunbotTeam(models.Model):
     @api.model
     def _get_team(self, module_name):
         for team in self.env['runbot.team'].search([('path_glob', '!=', False)]):
-            if any([fnmatch(module_name, pattern.strip().strip('-')) for pattern in team.path_glob.split(',') if pattern.strip().startswith('-')]):
+            if any(
+                fnmatch(module_name, pattern.strip().strip('-'))
+                for pattern in team.path_glob.split(',')
+                if pattern.strip().startswith('-')
+            ):
                 continue
-            if any([fnmatch(module_name, pattern.strip()) for pattern in team.path_glob.split(',') if not pattern.strip().startswith('-')]):
+            if any(
+                fnmatch(module_name, pattern.strip())
+                for pattern in team.path_glob.split(',')
+                if not pattern.strip().startswith('-')
+            ):
                 return team.id
         return False
 

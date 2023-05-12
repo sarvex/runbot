@@ -74,8 +74,10 @@ class Project(models.Model):
 
     def _find_commands(self, comment):
         return re.findall(
-            '^\s*[@|#]?{}:? (.*)$'.format(self.github_prefix),
-            comment, re.MULTILINE | re.IGNORECASE)
+            f'^\s*[@|#]?{self.github_prefix}:? (.*)$',
+            comment,
+            re.MULTILINE | re.IGNORECASE,
+        )
 
     def _has_branch(self, name):
         self.env.cr.execute("""
@@ -86,15 +88,14 @@ class Project(models.Model):
         return bool(self.env.cr.rowcount)
 
     def _next_freeze(self):
-        prev = self.branch_ids[1:2].name
-        if not prev:
-            return None
-
-        m = re.search(r'(\d+)(?:\.(\d+))?$', prev)
-        if m:
-            return "%s.%d" % (m[1], (int(m[2] or 0) + 1))
+        if prev := self.branch_ids[1:2].name:
+            return (
+                "%s.%d" % (m[1], (int(m[2] or 0) + 1))
+                if (m := re.search(r'(\d+)(?:\.(\d+))?$', prev))
+                else f'post-{prev}'
+            )
         else:
-            return f'post-{prev}'
+            return None
 
     def _compute_freeze(self):
         freezes = {

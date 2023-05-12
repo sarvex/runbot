@@ -73,12 +73,12 @@ class Config(models.Model):
 
     def _check_recustion(self, visited=None):
         visited = visited or []
-        recursion = False
-        if self in visited:
-            recursion = True
+        recursion = self in visited
         visited.append(self)
         if recursion:
-            raise UserError('Impossible to save config, recursion detected with path: %s' % ">".join([v.name for v in visited]))
+            raise UserError(
+                f'Impossible to save config, recursion detected with path: {">".join([v.name for v in visited])}'
+            )
         for step in self.step_ids():
             if step.job_type == 'create_build':
                 for create_config in step.create_config_ids:
@@ -179,8 +179,7 @@ class ConfigStep(models.Model):
 
     def _check_python_field(self, field_name):
         for step in self.sudo().filtered(field_name):
-            msg = test_python_expr(expr=step[field_name].strip(), mode="exec")
-            if msg:
+            if msg := test_python_expr(expr=step[field_name].strip(), mode="exec"):
                 raise ValidationError(msg)
 
     @api.onchange('sub_command')
@@ -232,20 +231,26 @@ class ConfigStep(models.Model):
             if (values.get('extra_params')):
                 reg = r'^[a-zA-Z0-9\-_ "]*$'
                 if not re.match(reg, values.get('extra_params')):
-                    _logger.log('%s tried to create an non supported test_param %s' % (self.env.user.name, values.get('extra_params')))
+                    _logger.log(
+                        f"{self.env.user.name} tried to create an non supported test_param {values.get('extra_params')}"
+                    )
                     raise UserError('Invalid extra_params on config step')
 
     def _run(self, build):
-        log_path = build._path('logs', '%s.txt' % self.name)
+        log_path = build._path('logs', f'{self.name}.txt')
         build.write({'job_start': now(), 'job_end': False})  # state, ...
-        build._log('run', 'Starting step **%s** from config **%s**' % (self.name, build.params_id.config_id.name), log_type='markdown', level='SEPARATOR')
+        build._log(
+            'run',
+            f'Starting step **{self.name}** from config **{build.params_id.config_id.name}**',
+            log_type='markdown',
+            level='SEPARATOR',
+        )
         self._run_step(build, log_path)
 
     def _run_step(self, build, log_path, **kwargs):
         build.log_counter = self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_maxlogs', 100)
-        run_method = getattr(self, '_run_%s' % self.job_type)
-        docker_params = run_method(build, log_path, **kwargs)
-        if docker_params:
+        run_method = getattr(self, f'_run_{self.job_type}')
+        if docker_params := run_method(build, log_path, **kwargs):
             build._docker_run(**docker_params)
 
     def _run_create_build(self, build, log_path):
@@ -257,7 +262,12 @@ class ConfigStep(models.Model):
                     build._logger('Too much build created')
                     break
                 child = build._add_child({'config_id': create_config.id}, orphan=self.make_orphan)
-                build._log('create_build', 'created with config %s' % create_config.name, log_type='subbuild', path=str(child.id))
+                build._log(
+                    'create_build',
+                    f'created with config {create_config.name}',
+                    log_type='subbuild',
+                    path=str(child.id),
+                )
 
     def make_python_ctx(self, build):
         return {
@@ -266,7 +276,7 @@ class ConfigStep(models.Model):
             'models': models,
             'build': build,
             '_logger': _logger,
-            'log_path': build._path('logs', '%s.txt' % self.name),
+            'log_path': build._path('logs', f'{self.name}.txt'),
             'glob': glob.glob,
             'Command': Command,
             're': re,
@@ -285,8 +295,7 @@ class ConfigStep(models.Model):
         except ValueError as e:
             save_eval_value_error_re = r'<class \'odoo.addons.runbot.models.repo.RunbotException\'>: "(.*)" while evaluating\n.*'
             message = e.args[0]
-            groups = re.match(save_eval_value_error_re, message)
-            if groups:
+            if groups := re.match(save_eval_value_error_re, message):
                 build._log("run", groups[1], level='ERROR')
                 build._kill(result='ko')
             else:
@@ -310,7 +319,7 @@ class ConfigStep(models.Model):
         exports = build._checkout()
 
         # adjust job_end to record an accurate job_20 job_time
-        build._log('run', 'Start running build %s' % build.dest)
+        build._log('run', f'Start running build {build.dest}')
         # run server
         cmd = build._cmd(local_only=False)
         if os.path.exists(build._get_server_commit()._source_path('addons/im_livechat')):
@@ -324,7 +333,7 @@ class ConfigStep(models.Model):
         install_steps = [step.db_name for step in build.params_id.config_id.step_ids() if step.job_type == 'install_odoo']
         db_name = build.params_id.config_data.get('db_name') or 'all' in install_steps and 'all' or install_steps[0]
         # we need to have at least one job of type install_odoo to run odoo, take the last one for db_name.
-        cmd += ['-d', '%s-%s' % (build.dest, db_name)]
+        cmd += ['-d', f'{build.dest}-{db_name}']
 
         icp = self.env['ir.config_parameter'].sudo()
         nginx = icp.get_param('runbot.runbot_nginx', True)
@@ -335,13 +344,11 @@ class ConfigStep(models.Model):
             if nginx:
                 cmd += ['--db-filter', '%d.*$']
             else:
-                cmd += ['--db-filter', '%s.*$' % build.dest]
-        smtp_host = docker_get_gateway_ip()
-        if smtp_host:
+                cmd += ['--db-filter', f'{build.dest}.*$']
+        if smtp_host := docker_get_gateway_ip():
             cmd += ['--smtp', smtp_host]
 
-        extra_params = self.extra_params or ''
-        if extra_params:
+        if extra_params := self.extra_params or '':
             cmd.extend(shlex.split(extra_params))
         env_variables = self.additionnal_env.split(';') if self.additionnal_env else []
 

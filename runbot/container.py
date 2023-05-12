@@ -141,32 +141,33 @@ def _docker_run(cmd=False, log_path=False, build_dir=False, container_name=False
         cmd_object = Command([], run_cmd.split(' '), [])
     _logger.info('Docker run command: %s', run_cmd)
     logs = open(log_path, 'w')
-    run_cmd = 'cd /data/build;touch start-%s;%s;cd /data/build;touch end-%s' % (container_name, run_cmd, container_name)
+    run_cmd = f'cd /data/build;touch start-{container_name};{run_cmd};cd /data/build;touch end-{container_name}'
     docker_clear_state(container_name, build_dir)  # ensure that no state are remaining
-    open(os.path.join(build_dir, 'exist-%s' % container_name), 'w+').close()
+    open(os.path.join(build_dir, f'exist-{container_name}'), 'w+').close()
     logs.write("Docker command:\n%s\n=================================================\n" % cmd_object)
     # create start script
     docker_command = [
-        'docker', 'run', '--rm',
-        '--name', container_name,
+        'docker',
+        'run',
+        '--rm',
+        '--name',
+        container_name,
         '--volume=/var/run/postgresql:/var/run/postgresql',
-        '--volume=%s:/data/build' % build_dir,
+        f'--volume={build_dir}:/data/build',
         '--shm-size=128m',
         '--init',
     ]
 
     if memory:
-        docker_command.append('--memory=%s' % memory)
+        docker_command.append(f'--memory={memory}')
 
     if ro_volumes:
         for dest, source in ro_volumes.items():
             logs.write("Adding readonly volume '%s' pointing to %s \n" % (dest, source))
-            docker_command.append('--volume=%s:/data/build/%s:ro' % (source, dest))
+            docker_command.append(f'--volume={source}:/data/build/{dest}:ro')
 
     if env_variables:
-        for var in env_variables:
-            docker_command.append('-e=%s' % var)
-
+        docker_command.extend(f'-e={var}' for var in env_variables)
     serverrc_path = os.path.expanduser('~/.openerp_serverrc')
     odoorc_path = os.path.expanduser('~/.odoorc')
     final_rc = odoorc_path if os.path.exists(odoorc_path) else serverrc_path if os.path.exists(serverrc_path) else None
@@ -174,14 +175,14 @@ def _docker_run(cmd=False, log_path=False, build_dir=False, container_name=False
     rc_path = os.path.join(build_dir, '.odoorc')
     with open(rc_path, 'w') as rc_file:
         rc_file.write(rc_content)
-    docker_command.extend(['--volume=%s:/home/odoo/.odoorc:ro' % rc_path])
+    docker_command.extend([f'--volume={rc_path}:/home/odoo/.odoorc:ro'])
 
     if exposed_ports:
         for dp, hp in enumerate(exposed_ports, start=8069):
-            docker_command.extend(['-p', '127.0.0.1:%s:%s' % (hp, dp)])
+            docker_command.extend(['-p', f'127.0.0.1:{hp}:{dp}'])
     if cpu_limit:
-        docker_command.extend(['--ulimit', 'cpu=%s' % int(cpu_limit)])
-    docker_command.extend([image_tag, '/bin/bash', '-c', "%s" % run_cmd])
+        docker_command.extend(['--ulimit', f'cpu={int(cpu_limit)}'])
+    docker_command.extend([image_tag, '/bin/bash', '-c', f"{run_cmd}"])
     subprocess.Popen(docker_command, stdout=logs, stderr=logs, preexec_fn=preexec_fn, close_fds=False, cwd=build_dir)
     _logger.info('Started Docker container %s', container_name)
     return
@@ -196,7 +197,7 @@ def _docker_stop(container_name, build_dir):
     container_name = sanitize_container_name(container_name)
     _logger.info('Stopping container %s', container_name)
     if build_dir:
-        end_file = os.path.join(build_dir, 'end-%s' % container_name)
+        end_file = os.path.join(build_dir, f'end-{container_name}')
         subprocess.run(['touch', end_file])
     else:
         _logger.info('Stopping docker without defined build_dir')
@@ -206,14 +207,14 @@ def _docker_stop(container_name, build_dir):
 def docker_is_running(container_name):
     container_name = sanitize_container_name(container_name)
     dinspect = subprocess.run(['docker', 'container', 'inspect', container_name], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-    return True if dinspect.returncode == 0 else False
+    return dinspect.returncode == 0
 
 
 def docker_state(container_name, build_dir):
     container_name = sanitize_container_name(container_name)
-    exist = os.path.exists(os.path.join(build_dir, 'exist-%s' % container_name))
-    started = os.path.exists(os.path.join(build_dir, 'start-%s' % container_name))
-    ended = os.path.exists(os.path.join(build_dir, 'end-%s' % container_name))
+    exist = os.path.exists(os.path.join(build_dir, f'exist-{container_name}'))
+    started = os.path.exists(os.path.join(build_dir, f'start-{container_name}'))
+    ended = os.path.exists(os.path.join(build_dir, f'end-{container_name}'))
 
     if not exist:
         return 'VOID'
@@ -222,23 +223,19 @@ def docker_state(container_name, build_dir):
         return 'END'
 
     if started:
-        if docker_is_running(container_name):
-            return 'RUNNING'
-        else:
-            return 'GHOST'
-
+        return 'RUNNING' if docker_is_running(container_name) else 'GHOST'
     return 'UNKNOWN'
 
 
 def docker_clear_state(container_name, build_dir):
     """Return True if container is still running"""
     container_name = sanitize_container_name(container_name)
-    if os.path.exists(os.path.join(build_dir, 'start-%s' % container_name)):
-        os.remove(os.path.join(build_dir, 'start-%s' % container_name))
-    if os.path.exists(os.path.join(build_dir, 'end-%s' % container_name)):
-        os.remove(os.path.join(build_dir, 'end-%s' % container_name))
-    if os.path.exists(os.path.join(build_dir, 'exist-%s' % container_name)):
-        os.remove(os.path.join(build_dir, 'exist-%s' % container_name))
+    if os.path.exists(os.path.join(build_dir, f'start-{container_name}')):
+        os.remove(os.path.join(build_dir, f'start-{container_name}'))
+    if os.path.exists(os.path.join(build_dir, f'end-{container_name}')):
+        os.remove(os.path.join(build_dir, f'end-{container_name}'))
+    if os.path.exists(os.path.join(build_dir, f'exist-{container_name}')):
+        os.remove(os.path.join(build_dir, f'exist-{container_name}'))
 
 
 def docker_get_gateway_ip():
@@ -267,9 +264,7 @@ def _docker_ps():
     if docker_ps.returncode != 0:
         return []
     output = docker_ps.stdout.decode()
-    if not output:
-        return []
-    return output.strip().split('\n')
+    return [] if not output else output.strip().split('\n')
 
 
 def build(args):
@@ -300,9 +295,11 @@ if os.environ.get('RUNBOT_MODE') == 'test':
 
     def fake_docker_run(run_cmd, log_path, build_dir, container_name, exposed_ports=None, cpu_limit=None, preexec_fn=None, ro_volumes=None, env_variables=None, *args, **kwargs):
         _logger.info('Docker Fake Run: %s', run_cmd)
-        open(os.path.join(build_dir, 'exist-%s' % container_name), 'w').write('fake end')
-        open(os.path.join(build_dir, 'start-%s' % container_name), 'w').write('fake start\n')
-        open(os.path.join(build_dir, 'end-%s' % container_name), 'w').write('fake end')
+        open(os.path.join(build_dir, f'exist-{container_name}'), 'w').write('fake end')
+        open(os.path.join(build_dir, f'start-{container_name}'), 'w').write(
+            'fake start\n'
+        )
+        open(os.path.join(build_dir, f'end-{container_name}'), 'w').write('fake end')
         with open(log_path, 'w') as log_file:
             log_file.write('Fake docker_run started\n')
             log_file.write('run_cmd: %s\n' % run_cmd)

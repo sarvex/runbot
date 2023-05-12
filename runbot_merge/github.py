@@ -60,7 +60,7 @@ class GH(object):
         self._url = 'https://api.github.com'
         self._repo = repo
         session = self._session = requests.Session()
-        session.headers['Authorization'] = 'token {}'.format(token)
+        session.headers['Authorization'] = f'token {token}'
         session.headers['Accept'] = 'application/vnd.github.symmetra-preview+json'
 
     def _log_gh(self, logger, method, path, params, json, response, level=logging.INFO):
@@ -87,19 +87,21 @@ class GH(object):
                     for c in response.content.decode('iso-8859-1')
                 )
 
-        logger.log(level, GH_LOG_PATTERN.format(
-            self=self,
-            # requests data
-            method=method, path=path,
-            qs='' if not params else ('?' + werkzeug.urls.url_encode(params)),
-            body=utils.shorten(body.strip(), 400),
-            # response data
-            r=response,
-            headers='\n'.join(
-                '\t%s: %s' % (h, v) for h, v in response.headers.items()
+        logger.log(
+            level,
+            GH_LOG_PATTERN.format(
+                self=self,
+                method=method,
+                path=path,
+                qs='' if not params else f'?{werkzeug.urls.url_encode(params)}',
+                body=utils.shorten(body.strip(), 400),
+                r=response,
+                headers='\n'.join(
+                    '\t%s: %s' % (h, v) for h, v in response.headers.items()
+                ),
+                body2=utils.shorten(body2.strip(), 400),
             ),
-            body2=utils.shorten(body2.strip(), 400)
-        ))
+        )
         return body2
 
     def __call__(self, method, path, params=None, json=None, check=True):
@@ -108,15 +110,14 @@ class GH(object):
         """
         r = self._session.request(
             method,
-            '{}/repos/{}/{}'.format(self._url, self._repo, path),
+            f'{self._url}/repos/{self._repo}/{path}',
             params=params,
-            json=json
+            json=json,
         )
         self._log_gh(_gh, method, path, params, json, r)
         if check:
             if isinstance(check, collections.Mapping):
-                exc = check.get(r.status_code)
-                if exc:
+                if exc := check.get(r.status_code):
                     raise exc(r.text)
             if r.status_code >= 400:
                 body = self._log_gh(
@@ -130,23 +131,23 @@ class GH(object):
         return r
 
     def user(self, username):
-        r = self._session.get("{}/users/{}".format(self._url, username))
+        r = self._session.get(f"{self._url}/users/{username}")
         r.raise_for_status()
         return r.json()
 
     def head(self, branch):
         d = utils.backoff(
-            lambda: self('get', 'git/refs/heads/{}'.format(branch)).json(),
-            exc=requests.HTTPError
+            lambda: self('get', f'git/refs/heads/{branch}').json(),
+            exc=requests.HTTPError,
         )
 
-        assert d['ref'] == 'refs/heads/{}'.format(branch)
+        assert d['ref'] == f'refs/heads/{branch}'
         assert d['object']['type'] == 'commit'
         _logger.debug("head(%s, %s) -> %s", self._repo, branch, d['object']['sha'])
         return d['object']['sha']
 
     def commit(self, sha):
-        c = self('GET', 'git/commits/{}'.format(sha)).json()
+        c = self('GET', f'git/commits/{sha}').json()
         _logger.debug('commit(%s, %s) -> %s', self._repo, sha, shorten(c['message']))
         return c
 
@@ -155,7 +156,7 @@ class GH(object):
         # fail, but we don't want the closing of the PR to fail, or for the
         # feedback cron to get stuck
         try:
-            self('POST', 'issues/{}/comments'.format(pr), json={'body': message})
+            self('POST', f'issues/{pr}/comments', json={'body': message})
         except requests.HTTPError as r:
             if _is_json(r.response):
                 body = r.response.json()
@@ -166,10 +167,10 @@ class GH(object):
         _logger.debug('comment(%s, %s, %s)', self._repo, pr, shorten(message))
 
     def close(self, pr):
-        self('PATCH', 'pulls/{}'.format(pr), json={'state': 'closed'})
+        self('PATCH', f'pulls/{pr}', json={'state': 'closed'})
 
     def change_tags(self, pr, remove, add):
-        labels_endpoint = 'issues/{}/labels'.format(pr)
+        labels_endpoint = f'issues/{pr}/labels'
         tags_before = {label['name'] for label in self('GET', labels_endpoint).json()}
         tags_after = (tags_before - remove) | add
         # replace labels entirely
@@ -181,11 +182,11 @@ class GH(object):
         """
         :return: nothing if successful, the incorrect HEAD otherwise
         """
-        r = self('get', 'git/refs/heads/{}'.format(branch), check=False)
+        r = self('get', f'git/refs/heads/{branch}', check=False)
         if r.status_code == 200:
             head = r.json()['object']['sha']
         else:
-            head = '<Response [%s]: %s)>' % (r.status_code, r.json() if _is_json(r) else r.text)
+            head = f'<Response [{r.status_code}]: {r.json() if _is_json(r) else r.text})>'
 
         if head == to:
             _logger.info("Sanity check ref update of %s to %s: ok", branch, to)
@@ -224,9 +225,10 @@ class GH(object):
             @utils.backoff(exc=AssertionError)
             def _wait_for_update():
                 head = self._check_updated(branch, sha)
-                assert not head, "Sanity check ref update of %s, expected %s got %s" % (
-                    branch, sha, head
-                )
+                assert (
+                    not head
+                ), f"Sanity check ref update of {branch}, expected {sha} got {head}"
+
             return
 
         # 422 makes no sense but that's what github returns, leaving 404 just
@@ -248,12 +250,13 @@ class GH(object):
                 @utils.backoff(exc=AssertionError)
                 def _wait_for_update():
                     head = self._check_updated(branch, sha)
-                    assert not head, "Sanity check ref update of %s, expected %s got %s" % (
-                        branch, sha, head
-                    )
+                    assert (
+                        not head
+                    ), f"Sanity check ref update of {branch}, expected {sha} got {head}"
+
                 return
 
-        raise AssertionError("set_ref failed(%s, %s)" % (status0, status1))
+        raise AssertionError(f"set_ref failed({status0}, {status1})")
 
     def merge(self, sha, dest, message):
         r = self('post', 'merges', json={
@@ -264,7 +267,9 @@ class GH(object):
         try:
             r = r.json()
         except Exception:
-            raise MergeError("Got non-JSON reponse from github: %s %s (%s)" % (r.status_code, r.reason, r.text))
+            raise MergeError(
+                f"Got non-JSON reponse from github: {r.status_code} {r.reason} ({r.text})"
+            )
         _logger.debug(
             "merge(%s, %s (%s), %s) -> %s",
             self._repo, dest, r['parents'][0]['sha'],
@@ -290,7 +295,7 @@ class GH(object):
         prev = original_head
         for original in commits:
             assert len(original['parents']) == 1, "can't rebase commits with more than one parent"
-            tmp_msg = 'temp rebasing PR %s (%s)' % (pr, original['sha'])
+            tmp_msg = f"temp rebasing PR {pr} ({original['sha']})"
             merged = self.merge(original['sha'], dest, tmp_msg)
 
             # whichever parent is not original['sha'] should be what dest
@@ -298,10 +303,9 @@ class GH(object):
             # expect (either original_head or the previously merged commit)
             [base_commit] = (parent['sha'] for parent in merged['parents']
                              if parent['sha'] != original['sha'])
-            assert prev == base_commit,\
-                "Inconsistent view of %s between head (%s) and merge (%s)" % (
-                    dest, prev, base_commit,
-                )
+            assert (
+                prev == base_commit
+            ), f"Inconsistent view of {dest} between head ({prev}) and merge ({base_commit})"
             prev = merged['sha']
             original['new_tree'] = merged['tree']['sha']
 
@@ -334,27 +338,27 @@ class GH(object):
     # fetch various bits of issues / prs to load them
     def pr(self, number):
         return (
-            self('get', 'issues/{}'.format(number)).json(),
-            self('get', 'pulls/{}'.format(number)).json()
+            self('get', f'issues/{number}').json(),
+            self('get', f'pulls/{number}').json(),
         )
 
     def comments(self, number):
         for page in itertools.count(1):
-            r = self('get', 'issues/{}/comments'.format(number), params={'page': page})
+            r = self('get', f'issues/{number}/comments', params={'page': page})
             yield from r.json()
             if not r.links.get('next'):
                 return
 
     def reviews(self, number):
         for page in itertools.count(1):
-            r = self('get', 'pulls/{}/reviews'.format(number), params={'page': page})
+            r = self('get', f'pulls/{number}/reviews', params={'page': page})
             yield from r.json()
             if not r.links.get('next'):
                 return
 
     def commits_lazy(self, pr):
         for page in itertools.count(1):
-            r = self('get', 'pulls/{}/commits'.format(pr), params={'page': page})
+            r = self('get', f'pulls/{pr}/commits', params={'page': page})
             yield from r.json()
             if not r.links.get('next'):
                 return
@@ -375,7 +379,7 @@ class GH(object):
         return sorted(commits, key=lambda c: idx[c['sha']])
 
     def statuses(self, h):
-        r = self('get', 'commits/{}/status'.format(h)).json()
+        r = self('get', f'commits/{h}/status').json()
         return [{
             'sha': r['sha'],
             **s,
@@ -386,7 +390,4 @@ def shorten(s):
         return s
 
     line1 = s.split('\n', 1)[0]
-    if len(line1) < 50:
-        return line1
-
-    return line1[:47] + '...'
+    return line1 if len(line1) < 50 else f'{line1[:47]}...'

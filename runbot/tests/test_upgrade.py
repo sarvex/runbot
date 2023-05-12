@@ -175,24 +175,32 @@ class TestUpgradeFlow(RunbotCase):
     def create_version(self, name):
         intname = int(''.join(c for c in name if c.isdigit())) if name != 'master' else 0
         if name != 'master':
-            branch_server = self.Branch.create({
-                'name': name,
-                'remote_id': self.remote_server.id,
-                'is_pr': False,
-                'head': self.Commit.create({
-                    'name': 'server%s' % intname,
-                    'repo_id': self.repo_server.id,
-                }).id,
-            })
-            branch_addons = self.Branch.create({
-                'name': name,
-                'remote_id': self.remote_addons.id,
-                'is_pr': False,
-                'head': self.Commit.create({
-                    'name': 'addons%s' % intname,
-                    'repo_id': self.repo_addons.id,
-                }).id,
-            })
+            branch_server = self.Branch.create(
+                {
+                    'name': name,
+                    'remote_id': self.remote_server.id,
+                    'is_pr': False,
+                    'head': self.Commit.create(
+                        {
+                            'name': f'server{intname}',
+                            'repo_id': self.repo_server.id,
+                        }
+                    ).id,
+                }
+            )
+            branch_addons = self.Branch.create(
+                {
+                    'name': name,
+                    'remote_id': self.remote_addons.id,
+                    'is_pr': False,
+                    'head': self.Commit.create(
+                        {
+                            'name': f'addons{intname}',
+                            'repo_id': self.repo_addons.id,
+                        }
+                    ).id,
+                }
+            )
         else:
             branch_server = self.branch_server
             branch_addons = self.branch_addons
@@ -213,15 +221,17 @@ class TestUpgradeFlow(RunbotCase):
             main_child = build._add_child({'config_id': self.config_nightly_db_generate.id})
             demo = main_child._add_child({'config_id': self.config_all.id})
             demo.database_ids = [
-                (0, 0, {'name': '%s-%s' % (demo.dest, 'base')}),
-                (0, 0, {'name': '%s-%s' % (demo.dest, 'dummy')}),
-                (0, 0, {'name': '%s-%s' % (demo.dest, 'all')})]
+                (0, 0, {'name': f'{demo.dest}-base'}),
+                (0, 0, {'name': f'{demo.dest}-dummy'}),
+                (0, 0, {'name': f'{demo.dest}-all'}),
+            ]
             demo.host = host.name
             no_demo = main_child._add_child({'config_id': self.config_all_no_demo.id})
             no_demo.database_ids = [
-                (0, 0, {'name': '%s-%s' % (no_demo.dest, 'base')}),
-                (0, 0, {'name': '%s-%s' % (no_demo.dest, 'dummy')}),
-                (0, 0, {'name': '%s-%s' % (no_demo.dest, 'no-demo-all')})]
+                (0, 0, {'name': f'{no_demo.dest}-base'}),
+                (0, 0, {'name': f'{no_demo.dest}-dummy'}),
+                (0, 0, {'name': f'{no_demo.dest}-no-demo-all'}),
+            ]
             no_demo.host = host.name
             (build | main_child | demo | no_demo).write({'local_state': 'done'})
             builds_nigthly[('root', build.params_id.trigger_id)] = build
@@ -234,12 +244,12 @@ class TestUpgradeFlow(RunbotCase):
         self.assertEqual(batch_weekly.category_id, self.weekly_category)
         builds_weekly = {}
         build = batch_weekly.slot_ids.filtered(lambda s: s.trigger_id == self.trigger_addons_weekly).build_id
-        build.database_ids = [(0, 0, {'name': '%s-%s' % (build.dest, 'dummy')})]
+        build.database_ids = [(0, 0, {'name': f'{build.dest}-dummy'})]
         self.assertEqual(build.params_id.config_id, self.config_weekly)
         builds_weekly[('root', build.params_id.trigger_id)] = build
         for db in ['l10n_be', 'l10n_ch', 'mail', 'account', 'stock']:
             child = build._add_child({'config_id': self.config_single.id})
-            child.database_ids = [(0, 0, {'name': '%s-%s' % (child.dest, db)})]
+            child.database_ids = [(0, 0, {'name': f'{child.dest}-{db}'})]
             child.local_state = 'done'
             child.host = host.name
             builds_weekly[(db, build.params_id.trigger_id)] = child
@@ -356,13 +366,19 @@ class TestUpgradeFlow(RunbotCase):
         from_version_builds = to_version_builds.children_ids
         self.assertEqual(
             [
-                '%s->%s' % (
-                    b.params_id.upgrade_from_build_id.params_id.version_id.name,
-                    b.params_id.upgrade_to_build_id.params_id.version_id.name
-                )
+                f'{b.params_id.upgrade_from_build_id.params_id.version_id.name}->{b.params_id.upgrade_to_build_id.params_id.version_id.name}'
                 for b in from_version_builds
             ],
-            ['11.0->12.0', 'saas-11.3->12.0', '12.0->13.0', 'saas-12.3->13.0', '13.0->master', 'saas-13.1->master', 'saas-13.2->master', 'saas-13.3->master']
+            [
+                '11.0->12.0',
+                'saas-11.3->12.0',
+                '12.0->13.0',
+                'saas-12.3->13.0',
+                '13.0->master',
+                'saas-13.1->master',
+                'saas-13.2->master',
+                'saas-13.3->master',
+            ],
         )
         from_version_builds.host = host.name
         from_version_builds._init_pendings(host)
@@ -411,27 +427,30 @@ class TestUpgradeFlow(RunbotCase):
             source_dest = first_build.params_id.dump_db.build_id.dest
             self.assertEqual(
                 str(cmd),
-                ' && '.join([
-                    'mkdir /data/build/restore',
-                    'cd /data/build/restore',
-                    'wget {dump_url}',
-                    'unzip -q {zip_name}',
-                    'echo "### restoring filestore"',
-                    'mkdir -p /data/build/datadir/filestore/{db_name}',
-                    'mv filestore/* /data/build/datadir/filestore/{db_name}',
-                    'echo "###restoring db"',
-                    'psql -q {db_name} < dump.sql',
-                    'cd /data/build',
-                    'echo "### cleaning"',
-                    'rm -r restore',
-                    'echo "### listing modules"',
-                    'psql {db_name} -c "select name from ir_module_module where state = \'installed\'" -t -A > /data/build/logs/restore_modules_installed.txt'
-                ]).format(
-                    dump_url='http://host.runbot.com/runbot/static/build/%s/logs/%s-account.zip' % (source_dest, source_dest),
-                    zip_name='%s-account.zip' % source_dest,
-                    db_name='%s-master-account' % str(first_build.id).zfill(5),
-                )
+                ' && '.join(
+                    [
+                        'mkdir /data/build/restore',
+                        'cd /data/build/restore',
+                        'wget {dump_url}',
+                        'unzip -q {zip_name}',
+                        'echo "### restoring filestore"',
+                        'mkdir -p /data/build/datadir/filestore/{db_name}',
+                        'mv filestore/* /data/build/datadir/filestore/{db_name}',
+                        'echo "###restoring db"',
+                        'psql -q {db_name} < dump.sql',
+                        'cd /data/build',
+                        'echo "### cleaning"',
+                        'rm -r restore',
+                        'echo "### listing modules"',
+                        'psql {db_name} -c "select name from ir_module_module where state = \'installed\'" -t -A > /data/build/logs/restore_modules_installed.txt',
+                    ]
+                ).format(
+                    dump_url=f'http://host.runbot.com/runbot/static/build/{source_dest}/logs/{source_dest}-account.zip',
+                    zip_name=f'{source_dest}-account.zip',
+                    db_name=f'{str(first_build.id).zfill(5)}-master-account',
+                ),
             )
+
         self.patchers['docker_run'].side_effect = docker_run_restore
         first_build.host = host.name
         first_build._init_pendings(host)
@@ -450,8 +469,10 @@ class TestUpgradeFlow(RunbotCase):
                 str(cmd),
                 'python3 server/server.py {addons_path} --no-xmlrpcs --no-netrpc -u all -d {db_name} --stop-after-init --max-cron-threads=0'.format(
                     addons_path='--addons-path addons,server/addons,server/core/addons',
-                    db_name='%s-master-account' % str(first_build.id).zfill(5))
+                    db_name=f'{str(first_build.id).zfill(5)}-master-account',
+                ),
             )
+
         self.patchers['docker_run'].side_effect = docker_run_upgrade
         first_build._schedule()
         self.assertEqual(self.patchers['docker_run'].call_count, 2)
@@ -518,7 +539,9 @@ class TestUpgradeFlow(RunbotCase):
         upgrade_complement_build_13.host = host.name
         self.assertEqual(upgrade_complement_build_13.params_id.config_id, config_upgrade_complement)
         for db in ['base', 'all', 'no-demo-all']:
-            upgrade_complement_build_13.database_ids = [(0, 0, {'name': '%s-%s' % (upgrade_complement_build_13.dest, db)})]
+            upgrade_complement_build_13.database_ids = [
+                (0, 0, {'name': f'{upgrade_complement_build_13.dest}-{db}'})
+            ]
 
         upgrade_complement_build_13._init_pendings(host)
 

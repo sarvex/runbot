@@ -23,7 +23,7 @@ class StatRegexWizard(models.TransientModel):
         try:
             regex = re.compile(self.regex)
         except re.error as e:
-            raise ValidationError("Unable to compile regular expression: %s" % e)
+            raise ValidationError(f"Unable to compile regular expression: {e}")
         if not re.search(VALUE_PATTERN, regex.pattern):
             raise ValidationError(
                 "The regular expresion should contain the name group pattern 'value' e.g: '(?P<value>.+)'"
@@ -36,18 +36,15 @@ class StatRegexWizard(models.TransientModel):
         self.message = ''
         if self.regex and self.test_text:
             self._validate_regex()
-            match = re.search(self.regex, self.test_text)
-            if match:
+            if match := re.search(self.regex, self.test_text):
                 group_dict = match.groupdict()
                 try:
                     value = float(group_dict.get("value"))
                 except ValueError:
-                    raise ValidationError('The matched value (%s) of "%s" cannot be converted into float' % (group_dict.get("value"), self.regex))
-                key = (
-                    "%s.%s" % (self.name, group_dict["key"])
-                    if "key" in group_dict
-                    else self.name
-                )
+                    raise ValidationError(
+                        f'The matched value ({group_dict.get("value")}) of "{self.regex}" cannot be converted into float'
+                    )
+                key = f'{self.name}.{group_dict["key"]}' if "key" in group_dict else self.name
             else:
                 self.message = 'No match !'
             self.key = key

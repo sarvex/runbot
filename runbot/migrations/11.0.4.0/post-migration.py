@@ -17,7 +17,9 @@ def migrate(cr, version):
     cr.execute("UPDATE runbot_branch SET no_build = 't' WHERE job_type = 'none'")
 
     # set config to Default_no_ run when branch is testing
-    cr.execute("UPDATE runbot_branch SET branch_config_id = %s WHERE job_type = 'testing'" % ref('runbot.runbot_build_config_default_no_run'))
+    cr.execute(
+        f"UPDATE runbot_branch SET branch_config_id = {ref('runbot.runbot_build_config_default_no_run')} WHERE job_type = 'testing'"
+    )
 
     # set build_start/_end
     cr.execute("UPDATE runbot_build SET build_start = job_start")

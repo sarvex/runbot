@@ -57,10 +57,14 @@ class Host(models.Model):
         db_template = icp.get_param('runbot.runbot_db_template', default='template0')
         if db_template and db_template != 'template0':
             with local_pgadmin_cursor() as local_cr:
-                local_cr.execute("""SELECT datname FROM pg_catalog.pg_database WHERE datname = '%s';""" % db_template)
+                local_cr.execute(
+                    f"""SELECT datname FROM pg_catalog.pg_database WHERE datname = '{db_template}';"""
+                )
                 res = local_cr.fetchone()
                 if not res:
-                    local_cr.execute("""CREATE DATABASE "%s" TEMPLATE template0 LC_COLLATE 'C' ENCODING 'unicode'""" % db_template)
+                    local_cr.execute(
+                        f"""CREATE DATABASE "{db_template}" TEMPLATE template0 LC_COLLATE 'C' ENCODING 'unicode'"""
+                    )
                     # TODO UPDATE pg_database set datallowconn = false, datistemplate = true (but not enough privileges)
 
     def _bootstrap(self):
@@ -68,7 +72,7 @@ class Host(models.Model):
         dirs = ['build', 'nginx', 'repo', 'sources', 'src', 'docker']
         static_path = self._get_work_path()
         static_dirs = {d: os.path.join(static_path, d) for d in dirs}
-        for dir, path in static_dirs.items():
+        for path in static_dirs.values():
             os.makedirs(path, exist_ok=True)
         self._bootstrap_db_template()
 
@@ -87,7 +91,7 @@ class Host(models.Model):
             build_process = docker_build(docker_build_path, dockerfile.image_tag)
             if build_process != 0:
                 dockerfile.to_build = False
-                message = 'Dockerfile build "%s" failed on host %s' % (dockerfile.image_tag, self.name)
+                message = f'Dockerfile build "{dockerfile.image_tag}" failed on host {self.name}'
                 dockerfile.message_post(body=message)
                 self.env['runbot.runbot'].warning(message)
                 _logger.warning(message)

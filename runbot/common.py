@@ -44,9 +44,7 @@ def now():
 
 
 def grep(filename, string):
-    if os.path.isfile(filename):
-        return find(filename, string) != -1
-    return False
+    return find(filename, string) != -1 if os.path.isfile(filename) else False
 
 
 def find(filename, string):
@@ -72,9 +70,7 @@ def rfind(filename, pattern):
 
 
 def time_delta(time):
-    if isinstance(time, timedelta):
-        return time
-    return timedelta(seconds=-time)
+    return time if isinstance(time, timedelta) else timedelta(seconds=-time)
 
 
 def s2human(time):
@@ -109,7 +105,7 @@ def local_pgadmin_cursor():
 def list_local_dbs(additionnal_conditions=None):
     additionnal_condition_str = ''
     if additionnal_conditions:
-        additionnal_condition_str = 'AND (%s)' % ' OR '.join(additionnal_conditions)
+        additionnal_condition_str = f"AND ({' OR '.join(additionnal_conditions)})"
     with local_pgadmin_cursor() as local_cr:
         local_cr.execute("""
             SELECT datname

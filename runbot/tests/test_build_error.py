@@ -23,7 +23,7 @@ class TestBuildError(RunbotCase):
             'port': '1234',
             'local_result': 'ok'
         }
-        create_vals.update(vals)
+        create_vals |= vals
         return self.Build.create(create_vals)
 
     def setUp(self):
@@ -53,7 +53,7 @@ class TestBuildError(RunbotCase):
 
         # Test the build parse and ensure that an 'ok' build is not parsed
         IrLog.create(log)
-        log.update({'build_id': ok_build.id})
+        log['build_id'] = ok_build.id
         IrLog.create(log)
         ko_build._parse_logs()
         ok_build._parse_logs()
@@ -64,7 +64,7 @@ class TestBuildError(RunbotCase):
 
         # Test that build with same error is added to the errors
         ko_build_same_error = self.create_test_build({'local_result': 'ko'})
-        log.update({'build_id': ko_build_same_error.id})
+        log['build_id'] = ko_build_same_error.id
         IrLog.create(log)
         ko_build_same_error._parse_logs()
         self.assertIn(ko_build_same_error, build_error.build_ids, 'The parsed build should be added to the existing runbot.build.error')
@@ -72,7 +72,7 @@ class TestBuildError(RunbotCase):
         # Test that line numbers does not interfere with error recognition
         ko_build_diff_number = self.create_test_build({'local_result': 'ko'})
         rte_diff_numbers = RTE_ERROR.replace('89', '100').replace('1062', '1000').replace('1046', '4610')
-        log.update({'build_id': ko_build_diff_number.id, 'message': rte_diff_numbers})
+        log |= {'build_id': ko_build_diff_number.id, 'message': rte_diff_numbers}
         IrLog.create(log)
         ko_build_diff_number._parse_logs()
         self.assertIn(ko_build_diff_number, build_error.build_ids, 'The parsed build with different line numbers in error should be added to the runbot.build.error')
@@ -81,7 +81,7 @@ class TestBuildError(RunbotCase):
         # a new build error is created, with the old one linked
         build_error.active = False
         ko_build_new = self.create_test_build({'local_result': 'ko'})
-        log.update({'build_id': ko_build_new.id})
+        log['build_id'] = ko_build_new.id
         IrLog.create(log)
         ko_build_new._parse_logs()
         self.assertNotIn(ko_build_new, build_error.build_ids, 'The parsed build should not be added to a fixed runbot.build.error')

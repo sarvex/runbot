@@ -31,11 +31,13 @@ def migrate(cr, version):
 
     # Raise in case of buggy PR's
     cr.execute("SELECT id,name FROM runbot_branch WHERE name LIKE 'refs/pull/%' AND pull_head_name is null")
-    bad_prs = cr.fetchall()
-    if bad_prs:
+    if bad_prs := cr.fetchall():
         for pr in bad_prs:
             _logger.warning('PR with NULL pull_head_name found: %s (%s)', pr[1], pr[0])
-        raise RuntimeError("Migration error", "Found %s PR's without pull_head_name" % len(bad_prs))
+        raise RuntimeError(
+            "Migration error",
+            f"Found {len(bad_prs)} PR's without pull_head_name",
+        )
 
     # avoid recompute of branch._comput_bundle_id otherwise, it cannot find xml data
     cr.execute('ALTER TABLE runbot_branch ADD COLUMN bundle_id INTEGER;')

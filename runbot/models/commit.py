@@ -73,7 +73,11 @@ class Commit(models.Model):
             export_sha = self.rebase_on_id.name
             self.rebase_on_id.repo_id._fetch(export_sha)
 
-        p1 = subprocess.Popen(['git', '--git-dir=%s' % self.repo_id.path, 'archive', export_sha], stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+        p1 = subprocess.Popen(
+            ['git', f'--git-dir={self.repo_id.path}', 'archive', export_sha],
+            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
         p2 = subprocess.Popen(['tar', '-xmC', export_path], stdin=p1.stdout, stdout=subprocess.PIPE)
         p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
         (_, err) = p2.communicate()
@@ -81,27 +85,42 @@ class Commit(models.Model):
         if p1.returncode:
             _logger.info("git export: removing corrupted export %r", export_path)
             shutil.rmtree(export_path)
-            raise RunbotException("Git archive failed for %s with error code %s. (%s)" % (self.name, p1.returncode, p1.stderr.read().decode()))
+            raise RunbotException(
+                f"Git archive failed for {self.name} with error code {p1.returncode}. ({p1.stderr.read().decode()})"
+            )
         if err:
             _logger.info("git export: removing corrupted export %r", export_path)
             shutil.rmtree(export_path)
-            raise RunbotException("Export for %s failed. (%s)" % (self.name, err))
+            raise RunbotException(f"Export for {self.name} failed. ({err})")
 
         if self.rebase_on_id:
             # we could be smart here and detect if merge_base == commit, in witch case checkouting base_commit is enough. Since we don't have this info
             # and we are exporting in a custom folder anyway, lets
             _logger.info('Applying patch for %s', self.name)
-            p1 = subprocess.Popen(['git', '--git-dir=%s' % self.repo_id.path, 'diff', '%s...%s' % (export_sha, self.name)], stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            p1 = subprocess.Popen(
+                [
+                    'git',
+                    f'--git-dir={self.repo_id.path}',
+                    'diff',
+                    f'{export_sha}...{self.name}',
+                ],
+                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+            )
             p2 = subprocess.Popen(['patch', '-p0', '-d', export_path], stdin=p1.stdout, stdout=subprocess.PIPE)
             p1.stdout.close()
             (message, err) = p2.communicate()
             p1.poll()
             if err:
                 shutil.rmtree(export_path)
-                raise RunbotException("Apply patch failed for %s...%s. (%s)" % (export_sha, self.name, err))
+                raise RunbotException(
+                    f"Apply patch failed for {export_sha}...{self.name}. ({err})"
+                )
             if p1.returncode or p2.returncode:
                 shutil.rmtree(export_path)
-                raise RunbotException("Apply patch failed for %s...%s with error code %s+%s. (%s)" % (export_sha, self.name, p1.returncode, p2.returncode, message))
+                raise RunbotException(
+                    f"Apply patch failed for {export_sha}...{self.name} with error code {p1.returncode}+{p2.returncode}. ({message})"
+                )
 
         # migration scripts link if necessary
         icp = self.env['ir.config_parameter']
@@ -110,7 +129,7 @@ class Commit(models.Model):
         if ln_param and migration_repo_id and self.repo_id.server_files:
             scripts_dir = self.env['runbot.repo'].browse(migration_repo_id).name
             try:
-                os.symlink('/data/build/%s' % scripts_dir,  self._source_path(ln_param))
+                os.symlink(f'/data/build/{scripts_dir}', self._source_path(ln_param))
             except FileNotFoundError:
                 _logger.warning('Impossible to create migration symlink')
 
@@ -127,13 +146,13 @@ class Commit(models.Model):
     def _source_path(self, *path):
         export_name = self.name
         if self.rebase_on_id:
-            export_name = '%s_%s' % (self.name, self.rebase_on_id.name)
+            export_name = f'{self.name}_{self.rebase_on_id.name}'
         return os.path.join(self.env['runbot.runbot']._root(), 'sources', self.repo_id.name, export_name, *path)
 
     @api.depends('name', 'repo_id.name')
     def _compute_dname(self):
         for commit in self:
-            commit.dname = '%s:%s' % (commit.repo_id.name, commit.name[:8])
+            commit.dname = f'{commit.repo_id.name}:{commit.name[:8]}'
 
     def _github_status(self, build, context, state, target_url, description=None, post_commit=True):
         self.ensure_one()
@@ -212,7 +231,11 @@ class CommitStatus(models.Model):
                     _logger.info(
                         "github updating %s status %s to %s in repo %s",
                         status['context'], commit_name, status['state'], remote.name)
-                    remote._github('/repos/:owner/:repo/statuses/%s' % commit_name, status, ignore_errors=True)
+                    remote._github(
+                        f'/repos/:owner/:repo/statuses/{commit_name}',
+                        status,
+                        ignore_errors=True,
+                    )
                     env['runbot.commit.status'].browse(status_id).sent_date = fields.Datetime.now()
 
             def send_github_status_async():

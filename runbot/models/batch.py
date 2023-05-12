@@ -51,7 +51,7 @@ class Batch(models.Model):
 
     def _url(self):
         self.ensure_one()
-        return "/runbot/batch/%s" % self.id
+        return f"/runbot/batch/{self.id}"
 
     def _new_commit(self, branch, match_type='new'):
         # if not the same hash for repo:
@@ -94,8 +94,7 @@ class Batch(models.Model):
                 elif slot.link_type == 'created':
                     batches = testing_slots.mapped('batch_id')
                     _logger.info('Cannot skip build %s build is still in use in batches %s', build.id, batches.ids)
-                    bundles = batches.mapped('bundle_id') - batch.bundle_id
-                    if bundles:
+                    if bundles := batches.mapped('bundle_id') - batch.bundle_id:
                         batch._log('Cannot kill or skip build %s, build is used in another bundle: %s', build.id, bundles.mapped('name'))
 
     def _process(self):
@@ -144,7 +143,7 @@ class Batch(models.Model):
             self.bundle_id._compute_base_id()
         for level, message in self.bundle_id.consistency_warning():
             if level == "warning":
-                self.warning("Bundle warning: %s" % message)
+                self.warning(f"Bundle warning: {message}")
 
         self.state = 'ready'
 
@@ -162,7 +161,7 @@ class Batch(models.Model):
             ('category_id', '=', self.category_id.id)
         ]).filtered(
             lambda t: not t.version_domain or \
-            self.bundle_id.version_id.filtered_domain(t.get_version_domain())
+                self.bundle_id.version_id.filtered_domain(t.get_version_domain())
         )
 
         pushed_repo = self.commit_link_ids.mapped('commit_id.repo_id')
@@ -174,23 +173,24 @@ class Batch(models.Model):
         # Find missing commits
         ######################################
         def fill_missing(branch_commits, match_type):
-            if branch_commits:
-                for branch, commit in branch_commits.items():  # branch first in case pr is closed.
-                    nonlocal missing_repos
-                    if commit.repo_id in missing_repos:
-                        if not branch.alive:
-                            self._log("Skipping dead branch %s" % branch.name)
-                            continue
-                        values = {
-                            'commit_id': commit.id,
-                            'match_type': match_type,
-                            'branch_id': branch.id,
-                        }
-                        if match_type.startswith('base'):
-                            values['base_commit_id'] = commit.id
-                            values['merge_base_commit_id'] = commit.id
-                        self.write({'commit_link_ids': [(0, 0, values)]})
-                        missing_repos -= commit.repo_id
+            if not branch_commits:
+                return
+            for branch, commit in branch_commits.items():  # branch first in case pr is closed.
+                nonlocal missing_repos
+                if commit.repo_id in missing_repos:
+                    if not branch.alive:
+                        self._log(f"Skipping dead branch {branch.name}")
+                        continue
+                    values = {
+                        'commit_id': commit.id,
+                        'match_type': match_type,
+                        'branch_id': branch.id,
+                    }
+                    if match_type.startswith('base'):
+                        values['base_commit_id'] = commit.id
+                        values['merge_base_commit_id'] = commit.id
+                    self.write({'commit_link_ids': [(0, 0, values)]})
+                    missing_repos -= commit.repo_id
 
         # CHECK branch heads consistency
         branch_per_repo = {}
@@ -239,8 +239,11 @@ class Batch(models.Model):
                     batch_exiting_commit = batch.commit_ids.filtered(lambda c: c.repo_id in merge_base_commits.repo_id)
                     not_matching = (batch_exiting_commit - merge_base_commits)
                     if not_matching:
-                        message = 'Only %s out of %s merge base matched. You may want to rebase your branches to ensure compatibility' % (len(merge_base_commits)-len(not_matching), len(merge_base_commits))
-                        suggestions = [('Tip: rebase %s to %s' % (commit.repo_id.name, commit.name)) for commit in not_matching]
+                        message = f'Only {len(merge_base_commits) - len(not_matching)} out of {len(merge_base_commits)} merge base matched. You may want to rebase your branches to ensure compatibility'
+                        suggestions = [
+                            f'Tip: rebase {commit.repo_id.name} to {commit.name}'
+                            for commit in not_matching
+                        ]
                         self.warning('%s\n%s' % (message, '\n'.join(suggestions)))
             if batch:
                 fill_missing({link.branch_id: link.commit_id for link in batch.commit_link_ids}, 'base_match')
@@ -358,7 +361,18 @@ class Batch(models.Model):
                 merge_base_commit = self.env['runbot.commit']._get(merge_base_sha, commit.repo_id.id)
                 link_commit.merge_base_commit_id = merge_base_commit.id
 
-                ahead, behind = commit.repo_id._git(['rev-list', '--left-right', '--count', '%s...%s' % (commit.name, base_head.name)]).strip().split('\t')
+                ahead, behind = (
+                    commit.repo_id._git(
+                        [
+                            'rev-list',
+                            '--left-right',
+                            '--count',
+                            f'{commit.name}...{base_head.name}',
+                        ]
+                    )
+                    .strip()
+                    .split('\t')
+                )
 
                 link_commit.base_ahead = int(ahead)
                 link_commit.base_behind = int(behind)
@@ -366,9 +380,9 @@ class Batch(models.Model):
                 if merge_base_sha == commit.name:
                     continue
 
-                # diff. Iter on --numstat, easier to parse than --shortstat summary
-                diff = commit.repo_id._git(['diff', '--numstat', merge_base_sha, commit.name]).strip()
-                if diff:
+                if diff := commit.repo_id._git(
+                    ['diff', '--numstat', merge_base_sha, commit.name]
+                ).strip():
                     for line in diff.split('\n'):
                         link_commit.file_changed += 1
                         add, remove, _ = line.split(None, 2)
@@ -382,7 +396,7 @@ class Batch(models.Model):
 
     def warning(self, message, *args):
         self.has_warning = True
-        _logger.warning('batch %s: ' + message, self.id, *args)
+        _logger.warning(f'batch %s: {message}', self.id, *args)
         self._log(message, *args, level='WARNING')
 
     def _log(self, message, *args, level='INFO'):

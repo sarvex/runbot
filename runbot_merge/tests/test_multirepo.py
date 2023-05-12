@@ -65,15 +65,20 @@ def make_pr(repo, prefix, trees, *, target='master', user,
     :rtype: fake_github.PR
     """
     *_, c = repo.make_commits(
-        'heads/{}'.format(target),
+        f'heads/{target}',
         *(
             repo.Commit('commit_{}_{:02}'.format(prefix, i), tree=tree)
             for i, tree in enumerate(trees)
         ),
-        ref='heads/{}'.format(prefix)
+        ref=f'heads/{prefix}',
     )
-    pr = repo.make_pr(title='title {}'.format(prefix), body='body {}'.format(prefix),
-                      target=target, head=prefix, token=user)
+    pr = repo.make_pr(
+        title=f'title {prefix}',
+        body=f'body {prefix}',
+        target=target,
+        head=prefix,
+        token=user,
+    )
     for context, result in statuses:
         repo.post_status(c, result, context)
     if reviewer:
@@ -82,7 +87,7 @@ def make_pr(repo, prefix, trees, *, target='master', user,
 
 def make_branch(repo, name, message, tree, protect=True):
     c = repo.make_commit(None, message, None, tree=tree)
-    repo.make_ref('heads/%s' % name, c)
+    repo.make_ref(f'heads/{name}', c)
     if protect:
         repo.protect(name)
     return c
@@ -178,8 +183,8 @@ def test_stage_match(env, project, repo_a, repo_b, config, page):
     assert pr_a.state == 'merged'
     assert pr_b.state == 'merged'
 
-    assert 'Related: {}'.format(pr_b.display_name) in repo_a.commit('master').message
-    assert 'Related: {}'.format(pr_a.display_name) in repo_b.commit('master').message
+    assert f'Related: {pr_b.display_name}' in repo_a.commit('master').message
+    assert f'Related: {pr_a.display_name}' in repo_b.commit('master').message
 
     print(pr_a.batch_ids.read(['staging_id', 'prs']))
     # check that related PRs *still* link to one another after merge
@@ -294,10 +299,12 @@ def test_stage_different_statuses(env, project, repo_a, repo_b, config):
     master_a = repo_a.commit('master')
     master_b = repo_b.commit('master')
 
-    assert 'Related: {}'.format(pr_b_ref) in master_a.message,\
-        "related should be in PR A's message"
-    assert 'Related: {}'.format(pr_a_ref) not in master_b.message,\
-        "related should not be in PR B's message since the ref' was added explicitly"
+    assert (
+        f'Related: {pr_b_ref}' in master_a.message
+    ), "related should be in PR A's message"
+    assert (
+        f'Related: {pr_a_ref}' not in master_b.message
+    ), "related should not be in PR B's message since the ref' was added explicitly"
     assert pr_a_ref in master_b.message, "the ref' should still be there though"
 
 def test_unmatch_patch(env, project, repo_a, repo_b, config):
@@ -374,11 +381,11 @@ def test_sub_match(env, project, repo_a, repo_b, repo_c, config):
     c_staging = repo_c.commit('staging.master')
     assert json.loads(st.heads) == {
         repo_a.name: a_staging.id,
-        repo_a.name + '^': a_staging.parents[0],
+        f'{repo_a.name}^': a_staging.parents[0],
         repo_b.name: b_staging.id,
-        repo_b.name + '^': b_staging.id,
+        f'{repo_b.name}^': b_staging.id,
         repo_c.name: c_staging.id,
-        repo_c.name + '^': c_staging.id,
+        f'{repo_c.name}^': c_staging.id,
     }
 
 def test_merge_fail(env, project, repo_a, repo_b, users, config):
@@ -514,7 +521,7 @@ class TestCompanionsNotReady:
 
         pr_a = to_pr(env, p_a)
         pr_b = to_pr(env, p_b)
-        assert pr_a.label == pr_b.label == '{}:do-a-thing'.format(config['github']['owner'])
+        assert pr_a.label == pr_b.label == f"{config['github']['owner']}:do-a-thing"
 
         env.run_crons()
 
@@ -522,7 +529,7 @@ class TestCompanionsNotReady:
         assert pr_b.state == 'validated'
         assert not pr_b.staging_id
         assert not pr_a.staging_id, \
-            "pr_a should not have been staged as companion is not ready"
+                "pr_a should not have been staged as companion is not ready"
 
         assert p_a.comments == [
             (users['reviewer'], 'hansen r+'),
@@ -655,7 +662,10 @@ def test_other_failed(env, project, repo_a, repo_b, users, config):
     assert pr_a.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr_a, users),
-        (users['user'], 'Staging failed: ci/runbot on %s (view more at http://example.org/b)' % sth)
+        (
+            users['user'],
+            f'Staging failed: ci/runbot on {sth} (view more at http://example.org/b)',
+        ),
     ]
 
 class TestMultiBatches:
@@ -665,22 +675,45 @@ class TestMultiBatches:
         """
         project.batch_limit = 3
 
-        with repo_a, repo_b:
+        with (repo_a, repo_b):
             make_branch(repo_a, 'master', 'initial', {'a': 'a0'})
             make_branch(repo_b, 'master', 'initial', {'b': 'b0'})
 
-            prs = [(
-                a and to_pr(env, make_pr(repo_a, 'batch{}'.format(i), [{'a{}'.format(i): 'a{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)),
-                b and to_pr(env, make_pr(repo_b, 'batch{}'.format(i), [{'b{}'.format(i): 'b{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],))
-            )
-                for i, (a, b) in enumerate([(1, 1), (0, 1), (1, 1), (1, 1), (1, 0)])
+            prs = [
+                (
+                    a
+                    and to_pr(
+                        env,
+                        make_pr(
+                            repo_a,
+                            f'batch{i}',
+                            [{f'a{i}': f'a{i}'}],
+                            user=config['role_user']['token'],
+                            reviewer=config['role_reviewer']['token'],
+                        ),
+                    ),
+                    b
+                    and to_pr(
+                        env,
+                        make_pr(
+                            repo_b,
+                            f'batch{i}',
+                            [{f'b{i}': f'b{i}'}],
+                            user=config['role_user']['token'],
+                            reviewer=config['role_reviewer']['token'],
+                        ),
+                    ),
+                )
+                for i, (a, b) in enumerate(
+                    [(1, 1), (0, 1), (1, 1), (1, 1), (1, 0)]
+                )
             ]
         env.run_crons()
 
         st = env['runbot_merge.stagings'].search([])
         assert st
         assert len(st.batch_ids) == 3,\
-            "Should have batched the first <batch_limit> batches"
+                "Should have batched the first <batch_limit> batches"
         assert st.mapped('batch_ids.prs') == (
             prs[0][0] | prs[0][1]
           | prs[1][1]
@@ -694,15 +727,38 @@ class TestMultiBatches:
     def test_batching_split(self, env, repo_a, repo_b, config):
         """ If a staging fails, it should get split properly across repos
         """
-        with repo_a, repo_b:
+        with (repo_a, repo_b):
             make_branch(repo_a, 'master', 'initial', {'a': 'a0'})
             make_branch(repo_b, 'master', 'initial', {'b': 'b0'})
 
-            prs = [(
-                a and to_pr(env, make_pr(repo_a, 'batch{}'.format(i), [{'a{}'.format(i): 'a{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],)),
-                b and to_pr(env, make_pr(repo_b, 'batch{}'.format(i), [{'b{}'.format(i): 'b{}'.format(i)}], user=config['role_user']['token'], reviewer=config['role_reviewer']['token'],))
-            )
-                for i, (a, b) in enumerate([(1, 1), (0, 1), (1, 1), (1, 1), (1, 0)])
+            prs = [
+                (
+                    a
+                    and to_pr(
+                        env,
+                        make_pr(
+                            repo_a,
+                            f'batch{i}',
+                            [{f'a{i}': f'a{i}'}],
+                            user=config['role_user']['token'],
+                            reviewer=config['role_reviewer']['token'],
+                        ),
+                    ),
+                    b
+                    and to_pr(
+                        env,
+                        make_pr(
+                            repo_b,
+                            f'batch{i}',
+                            [{f'b{i}': f'b{i}'}],
+                            user=config['role_user']['token'],
+                            reviewer=config['role_reviewer']['token'],
+                        ),
+                    ),
+                )
+                for i, (a, b) in enumerate(
+                    [(1, 1), (0, 1), (1, 1), (1, 1), (1, 0)]
+                )
             ]
         env.run_crons()
 
@@ -727,11 +783,11 @@ class TestMultiBatches:
 
         assert len(st.batch_ids) == 2
         assert st.mapped('batch_ids.prs') == \
-            prs[0][0] | prs[0][1] | prs[1][1]
+                prs[0][0] | prs[0][1] | prs[1][1]
 
         assert len(sp.batch_ids) == 3
         assert sp.mapped('batch_ids.prs') == \
-            prs[2][0] | prs[2][1] | prs[3][0] | prs[3][1] | prs[4][0]
+                prs[2][0] | prs[2][1] | prs[3][0] | prs[3][1] | prs[4][0]
 
 def test_urgent(env, repo_a, repo_b, config):
     """ Either PR of a co-dependent pair being p=0 leads to the entire pair
@@ -893,7 +949,7 @@ class TestSubstitutions:
         for pr_number, (pattern, original, target) in enumerate(cases, start=1):
             r.substitutions = pattern
             requests.post(
-                'http://localhost:{}/runbot_merge/hooks'.format(port),
+                f'http://localhost:{port}/runbot_merge/hooks',
                 headers={'X-Github-Event': 'pull_request'},
                 json={
                     'action': 'opened',
@@ -914,10 +970,10 @@ class TestSubstitutions:
                         'commits': 1,
                         'head': {
                             'label': original,
-                            'sha': format(pr_number, 'x')*40,
-                        }
-                    }
-                }
+                            'sha': format(pr_number, 'x') * 40,
+                        },
+                    },
+                },
             )
             pr = env['runbot_merge.pull_requests'].search([
                 ('repository', '=', r.id),
@@ -934,7 +990,7 @@ class TestSubstitutions:
             ('name', '=', repo_b.name)
         ])
         # in repo b, replace owner part by repo_a's owner
-        repo_b_id.substitutions = r"/.+:/%s:/" % repo_a.owner
+        repo_b_id.substitutions = f"/.+:/{repo_a.owner}:/"
 
         with repo_a:
             make_branch(repo_a, 'master', 'initial', {'a': '0'})
@@ -947,11 +1003,10 @@ class TestSubstitutions:
             repo_a.make_commits('master', repo_a.Commit('bop', tree={'a': '1'}), ref='heads/abranch')
             pra = repo_a.make_pr(target='master', head='abranch')
         b_fork = repo_b.fork()
-        with b_fork, repo_b:
+        with (b_fork, repo_b):
             b_fork.make_commits('master', b_fork.Commit('pob', tree={'b': '1'}), ref='heads/abranch')
             prb = repo_b.make_pr(
-                title="a pr",
-                target='master', head='%s:abranch' % b_fork.owner
+                title="a pr", target='master', head=f'{b_fork.owner}:abranch'
             )
 
         pra_id = env['runbot_merge.pull_requests'].search([
@@ -1034,20 +1089,20 @@ def test_multi_project(env, make_repo, setreviewers, users, config,
 
     assert r1_dev.owner == r2_dev.owner
 
-    with r1, r1_dev:
+    with (r1, r1_dev):
         r1_dev.make_commits('default', Commit('new', tree={'a': 'b'}), ref='heads/other')
 
         # create, validate, and approve pr1
-        pr1 = r1.make_pr(title='pr 1', target='default', head=r1_dev.owner + ':other')
+        pr1 = r1.make_pr(title='pr 1', target='default', head=f'{r1_dev.owner}:other')
         r1.post_status(pr1.head, 'success', 'a')
         pr1.post_comment('hansen r+', config['role_reviewer']['token'])
 
-    with r2, r2_dev:
+    with (r2, r2_dev):
         r2_dev.make_commits('default', Commit('new', tree={'b': 'b'}), ref='heads/other')
 
         # create second PR with the same label *in a different project*, don't
         # approve it
-        pr2 = r2.make_pr(title='pr 2', target='default', head=r2_dev.owner + ':other')
+        pr2 = r2.make_pr(title='pr 2', target='default', head=f'{r2_dev.owner}:other')
         r2.post_status(pr2.head, 'success', 'a')
     env.run_crons()
 

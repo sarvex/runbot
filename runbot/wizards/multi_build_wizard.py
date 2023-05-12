@@ -25,13 +25,13 @@ class MultiBuildWizard(models.TransientModel):
         if self.base_name:
             prefix = self.env.user.login.split('@')[0] if not self.prefix else self.prefix
             self.prefix = prefix
-            name = '%s %s' % (prefix, self.base_name.capitalize())
+            name = f'{prefix} {self.base_name.capitalize()}'
             step_name = name.replace(' ', '_').lower()
 
-            self.config_multi_name = '%s Multi' % name
-            self.step_create_multi_name = '%s_create_multi' % step_name
-            self.config_single_name = '%s Single' % name
-            self.step_single_name = '%s_single' % step_name
+            self.config_multi_name = f'{name} Multi'
+            self.step_create_multi_name = f'{step_name}_create_multi'
+            self.config_single_name = f'{name} Single'
+            self.step_single_name = f'{step_name}_single'
 
     def generate(self):
         if self.base_name:

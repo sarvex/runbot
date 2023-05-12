@@ -87,4 +87,4 @@ class RunbotBadge(Controller):
             ('Cache-Control', 'max-age=%d' % (10*60,)),
             ('ETag', retag),
         ]
-        return request.render("runbot.badge_" + theme, data, headers=headers)
+        return request.render(f"runbot.badge_{theme}", data, headers=headers)

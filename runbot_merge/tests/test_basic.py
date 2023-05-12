@@ -96,7 +96,7 @@ def test_trivial_flow(env, repo, page, users, config):
     s = p.cssselect('.staging div.dropdown li')
     assert len(s) == 2
     assert s[1].get('class') == 'bg-success'
-    assert s[1][0].text.strip() == '{}: ci/runbot'.format(repo.name)
+    assert s[1][0].text.strip() == f'{repo.name}: ci/runbot'
 
     assert st.state == 'success'
     assert pr_id.state == 'merged'
@@ -229,7 +229,10 @@ class TestCommitMessage:
             prx = repo.make_pr(title='title', body='body', target='master', head=c2)
             repo.post_status(prx.head, 'success', 'ci/runbot')
             repo.post_status(prx.head, 'success', 'legal/cla')
-            prx.post_comment('hansen delegate=%s' % users['other'], config["role_reviewer"]["token"])
+            prx.post_comment(
+                f"hansen delegate={users['other']}",
+                config["role_reviewer"]["token"],
+            )
             prx.post_comment('hansen r+', config['role_other']['token'])
         env.run_crons()
 
@@ -240,8 +243,8 @@ class TestCommitMessage:
 
         master = repo.commit('heads/master')
         assert master.message == "simple commit message\n\ncloses {repo.name}#1"\
-                                 "\n\nSigned-off-by: {reviewer.formatted_email}"\
-                                 .format(repo=repo, reviewer=get_partner(env, users['other']))
+                                     "\n\nSigned-off-by: {reviewer.formatted_email}"\
+                                     .format(repo=repo, reviewer=get_partner(env, users['other']))
 
     def test_commit_coauthored(self, env, repo, users, config):
         """ verify 'closes ...' and 'Signed-off-by' are added before co-authored-by tags.
@@ -995,7 +998,10 @@ def test_reopen_merged_pr(env, repo, config, users):
     assert prx.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, prx, users),
-        (users['user'], "@%s ya silly goose you can't reopen a PR that's been merged PR." % users['other'])
+        (
+            users['user'],
+            f"@{users['other']} ya silly goose you can't reopen a PR that's been merged PR.",
+        ),
     ]
 
 class TestNoRequiredStatus:
@@ -1105,8 +1111,10 @@ class TestRetry:
             prx = _simple_init(repo)
             repo.post_status(prx.head, 'success', 'ci/runbot')
             repo.post_status(prx.head, 'success', 'legal/cla')
-            prx.post_comment('hansen r+ delegate=%s rebase-merge' % users['other'],
-                             config["role_reviewer"]['token'])
+            prx.post_comment(
+                f"hansen r+ delegate={users['other']} rebase-merge",
+                config["role_reviewer"]['token'],
+            )
         env.run_crons()
         assert env['runbot_merge.pull_requests'].search([
             ('repository.name', '=', repo.name),
@@ -1124,7 +1132,7 @@ class TestRetry:
         ]).state == 'error'
 
         with repo:
-            prx.post_comment('hansen retry', config['role_' + retrier]['token'])
+            prx.post_comment('hansen retry', config[f'role_{retrier}']['token'])
         assert env['runbot_merge.pull_requests'].search([
             ('repository.name', '=', repo.name),
             ('number', '=', prx.number)
@@ -1150,8 +1158,10 @@ class TestRetry:
             pr = _simple_init(repo)
             repo.post_status(pr.head, 'success', 'ci/runbot')
             repo.post_status(pr.head, 'success', 'legal/cla')
-            pr.post_comment('hansen r+ delegate=%s rebase-merge' % users['other'],
-                             config["role_reviewer"]['token'])
+            pr.post_comment(
+                f"hansen r+ delegate={users['other']} rebase-merge",
+                config["role_reviewer"]['token'],
+            )
         env.run_crons()
         pr_id = to_pr(env, pr)
         assert pr_id.staging_id
@@ -1191,7 +1201,10 @@ class TestRetry:
             (users['reviewer'], 'hansen r+'),
             (users['reviewer'], 'hansen retry'),
             seen(env, prx, users),
-            (users['user'], "I'm sorry, @{}. Retry makes no sense when the PR is not in error.".format(users['reviewer'])),
+            (
+                users['user'],
+                f"I'm sorry, @{users['reviewer']}. Retry makes no sense when the PR is not in error.",
+            ),
         ]
 
     @pytest.mark.parametrize('disabler', ['user', 'other', 'reviewer'])
@@ -1200,8 +1213,10 @@ class TestRetry:
             prx = _simple_init(repo)
             repo.post_status(prx.head, 'success', 'ci/runbot')
             repo.post_status(prx.head, 'success', 'legal/cla')
-            prx.post_comment('hansen r+ delegate=%s rebase-merge' % users['other'],
-                             config["role_reviewer"]['token'])
+            prx.post_comment(
+                f"hansen r+ delegate={users['other']} rebase-merge",
+                config["role_reviewer"]['token'],
+            )
         env.run_crons()
         assert env['runbot_merge.pull_requests'].search([
             ('repository.name', '=', repo.name),
@@ -1220,7 +1235,7 @@ class TestRetry:
         assert pr.state == 'error'
 
         with repo:
-            prx.post_comment('hansen r-', config['role_' + disabler]['token'])
+            prx.post_comment('hansen r-', config[f'role_{disabler}']['token'])
         assert pr.state == 'validated'
         with repo:
             repo.make_commit(prx.ref, 'third', None, tree={'m': 'c3'})
@@ -1660,13 +1675,16 @@ class TestMergeMethod:
 
         master = repo.commit('heads/master')
         assert master.parents == [m, prx.head], \
-            "master's parents should be the old master & the PR head"
+                "master's parents should be the old master & the PR head"
 
         m = node('M')
         c0 = node('C0', m)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
-        expected = node('gibberish\n\nblahblah\n\ncloses {}#{}'
-                        '\n\nSigned-off-by: {}'.format(repo.name, prx.number, reviewer), m, c0)
+        expected = node(
+            f'gibberish\n\nblahblah\n\ncloses {repo.name}#{prx.number}\n\nSigned-off-by: {reviewer}',
+            m,
+            c0,
+        )
         assert log_to_node(repo.log('heads/master')), expected
         pr = env['runbot_merge.pull_requests'].search([
             ('repository.name', '=', repo.name),
@@ -1702,13 +1720,16 @@ class TestMergeMethod:
 
         master = repo.commit('heads/master')
         assert master.parents == [m, prx.head], \
-            "master's parents should be the old master & the PR head"
+                "master's parents should be the old master & the PR head"
 
         m = node('M')
         c0 = node('C0', m)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
-        expected = node('gibberish\n\ncloses {}#{}'
-                        '\n\nSigned-off-by: {}'.format(repo.name, prx.number, reviewer), m, c0)
+        expected = node(
+            f'gibberish\n\ncloses {repo.name}#{prx.number}\n\nSigned-off-by: {reviewer}',
+            m,
+            c0,
+        )
         assert log_to_node(repo.log('heads/master')), expected
 
     @pytest.mark.parametrize('separator', [
@@ -1724,9 +1745,13 @@ class TestMergeMethod:
         with repo:
             root = repo.make_commits(None, Commit("root", tree={'a': 'a'}), ref='heads/master')
 
-            repo.make_commits(root, Commit('C', tree={'a': 'b'}), ref=f'heads/change')
-            pr = repo.make_pr(title="title", body=f'first\n{separator}\nsecond',
-                              target='master', head=f'change')
+            repo.make_commits(root, Commit('C', tree={'a': 'b'}), ref='heads/change')
+            pr = repo.make_pr(
+                title="title",
+                body=f'first\n{separator}\nsecond',
+                target='master',
+                head='change',
+            )
             repo.post_status(pr.head, 'success', 'legal/cla')
             repo.post_status(pr.head, 'success', 'ci/runbot')
             pr.post_comment('hansen r+ merge', config['role_reviewer']['token'])
@@ -1754,8 +1779,10 @@ class TestMergeMethod:
         with repo:
             root = repo.make_commits(None, Commit("root", tree={'a': 'a'}), ref='heads/master')
 
-            repo.make_commits(root, Commit('C', tree={'a': 'b'}), ref=f'heads/change')
-            pr = repo.make_pr(title="title", body="""\
+            repo.make_commits(root, Commit('C', tree={'a': 'b'}), ref='heads/change')
+            pr = repo.make_pr(
+                title="title",
+                body="""\
 Title
 ---
 This is some text
@@ -1766,7 +1793,9 @@ This is more text
 ***
 removed
 """,
-                              target='master', head=f'change')
+                target='master',
+                head='change',
+            )
             repo.post_status(pr.head, 'success', 'legal/cla')
             repo.post_status(pr.head, 'success', 'ci/runbot')
             pr.post_comment('hansen r+ merge', config['role_reviewer']['token'])
@@ -1801,7 +1830,11 @@ removed
         with repo:
             root = repo.make_commits(None, Commit("root", tree={'a': 'a'}), ref='heads/master')
 
-            repo.make_commits(root, Commit('Commit\n\nfirst\n***\nsecond', tree={'a': 'b'}), ref=f'heads/change')
+            repo.make_commits(
+                root,
+                Commit('Commit\n\nfirst\n***\nsecond', tree={'a': 'b'}),
+                ref='heads/change',
+            )
             pr = repo.make_pr(title="PR", body=f'first\n***\nsecond',
                               target='master', head='change')
             repo.post_status(pr.head, 'success', 'legal/cla')
@@ -1948,9 +1981,9 @@ Part-of: {pr_id.display_name}"""
         m1 = node('M1')
         reviewer = get_partner(env, users["reviewer"]).formatted_email
         expected = node(
-            'T\n\nTT\n\ncloses {}#{}\n\nSigned-off-by: {}'.format(repo.name, prx.number, reviewer),
+            f'T\n\nTT\n\ncloses {repo.name}#{prx.number}\n\nSigned-off-by: {reviewer}',
             node('M2', m1),
-            node('C1', node('C0', m1), node('B0', m1))
+            node('C1', node('C0', m1), node('B0', m1)),
         )
         assert log_to_node(repo.log('heads/master')), expected
 
@@ -2488,22 +2521,26 @@ class TestBatching(object):
         """ Helper creating a PR from a series of commits on a base
         """
         *_, c = repo.make_commits(
-            'heads/{}'.format(target),
+            f'heads/{target}',
             *(
                 repo.Commit('commit_{}_{:02}'.format(prefix, i), tree=t)
                 for i, t in enumerate(trees)
             ),
-            ref='heads/{}'.format(prefix)
+            ref=f'heads/{prefix}',
         )
-        pr = repo.make_pr(title='title {}'.format(prefix), body='body {}'.format(prefix),
-                          target=target, head=prefix, token=user)
+        pr = repo.make_pr(
+            title=f'title {prefix}',
+            body=f'body {prefix}',
+            target=target,
+            head=prefix,
+            token=user,
+        )
 
         for context, result in statuses:
             repo.post_status(c, result, context)
         if reviewer:
             pr.post_comment(
-                'hansen r+%s' % (' rebase-merge' if len(trees) > 1 else ''),
-                reviewer
+                f"hansen r+{' rebase-merge' if len(trees) > 1 else ''}", reviewer
             )
         return pr
 
@@ -2530,14 +2567,20 @@ class TestBatching(object):
         staging = log_to_node(log)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
         p1 = node(
-            'title PR1\n\nbody PR1\n\ncloses {}\n\nSigned-off-by: {}'.format(pr1.display_name, reviewer),
+            f'title PR1\n\nbody PR1\n\ncloses {pr1.display_name}\n\nSigned-off-by: {reviewer}',
             node('initial'),
-            node(part_of('commit_PR1_01', pr1), node(part_of('commit_PR1_00', pr1), node('initial')))
+            node(
+                part_of('commit_PR1_01', pr1),
+                node(part_of('commit_PR1_00', pr1), node('initial')),
+            ),
         )
         p2 = node(
-            'title PR2\n\nbody PR2\n\ncloses {}\n\nSigned-off-by: {}'.format(pr2.display_name, reviewer),
+            f'title PR2\n\nbody PR2\n\ncloses {pr2.display_name}\n\nSigned-off-by: {reviewer}',
             p1,
-            node(part_of('commit_PR2_01', pr2), node(part_of('commit_PR2_00', pr2), p1))
+            node(
+                part_of('commit_PR2_01', pr2),
+                node(part_of('commit_PR2_00', pr2), p1),
+            ),
         )
         assert staging == p2
 
@@ -2570,14 +2613,14 @@ class TestBatching(object):
         reviewer = get_partner(env, users["reviewer"]).formatted_email
 
         p1 = node(
-            'title PR1\n\nbody PR1\n\ncloses {}#{}\n\nSigned-off-by: {}'.format(repo.name, pr1.number, reviewer),
+            f'title PR1\n\nbody PR1\n\ncloses {repo.name}#{pr1.number}\n\nSigned-off-by: {reviewer}',
             node('initial'),
-            node('commit_PR1_01', node('commit_PR1_00', node('initial')))
+            node('commit_PR1_01', node('commit_PR1_00', node('initial'))),
         )
         p2 = node(
-            'title PR2\n\nbody PR2\n\ncloses {}#{}\n\nSigned-off-by: {}'.format(repo.name, pr2.number, reviewer),
+            f'title PR2\n\nbody PR2\n\ncloses {repo.name}#{pr2.number}\n\nSigned-off-by: {reviewer}',
             p1,
-            node('commit_PR2_01', node('commit_PR2_00', node('initial')))
+            node('commit_PR2_01', node('commit_PR2_00', node('initial'))),
         )
         assert staging == p2
 
@@ -2604,9 +2647,13 @@ class TestBatching(object):
 
         staging = log_to_node(log)
         reviewer = get_partner(env, users["reviewer"]).formatted_email
-        expected = node('commit_PR2_00\n\ncloses {}#{}\n\nSigned-off-by: {}'.format(repo.name, pr2.number, reviewer),
-             node('commit_PR1_00\n\ncloses {}#{}\n\nSigned-off-by: {}'.format(repo.name, pr1.number, reviewer),
-                  node('initial')))
+        expected = node(
+            f'commit_PR2_00\n\ncloses {repo.name}#{pr2.number}\n\nSigned-off-by: {reviewer}',
+            node(
+                f'commit_PR1_00\n\ncloses {repo.name}#{pr1.number}\n\nSigned-off-by: {reviewer}',
+                node('initial'),
+            ),
+        )
         assert staging == expected
 
     def test_batching_pressing(self, env, repo, config):
@@ -2821,11 +2868,16 @@ class TestReviewing(object):
         assert prx.comments == [
             (users['other'], 'hansen r+'),
             seen(env, prx, users),
-            (users['user'], "I'm sorry, @{}. I'm afraid I can't do that.".format(users['other'])),
+            (
+                users['user'],
+                f"I'm sorry, @{users['other']}. I'm afraid I can't do that.",
+            ),
             (users['reviewer'], 'hansen r+'),
             (users['reviewer'], 'hansen r+'),
-            (users['user'], "I'm sorry, @{}. This PR is already reviewed, reviewing it again is useless.".format(
-                 users['reviewer'])),
+            (
+                users['user'],
+                f"I'm sorry, @{users['reviewer']}. This PR is already reviewed, reviewing it again is useless.",
+            ),
         ]
 
     def test_self_review_fail(self, env, repo, users, config):
@@ -2853,7 +2905,10 @@ class TestReviewing(object):
         assert prx.comments == [
             (users['reviewer'], 'hansen r+'),
             seen(env, prx, users),
-            (users['user'], "I'm sorry, @{}. You can't review+.".format(users['reviewer'])),
+            (
+                users['user'],
+                f"I'm sorry, @{users['reviewer']}. You can't review+.",
+            ),
         ]
 
     def test_self_review_success(self, env, repo, users, config):
@@ -2917,7 +2972,7 @@ class TestReviewing(object):
             repo.post_status(prx.head, 'success', 'ci/runbot')
             # flip case to check that github login is case-insensitive
             other = ''.join(c.lower() if c.isupper() else c.upper() for c in users['other'])
-            prx.post_comment('hansen delegate=%s' % other, config['role_reviewer']['token'])
+            prx.post_comment(f'hansen delegate={other}', config['role_reviewer']['token'])
         env.run_crons()
         env['res.partner'].search([('github_login', '=', other)]).email = f'{other}@example.org'
 
@@ -3153,7 +3208,10 @@ class TestUnknownPR:
 
         assert prx.comments == [
             (users['reviewer'], 'hansen r+'),
-            (users['user'], "This PR targets the un-managed branch %s:branch, it can not be merged." % repo.name),
+            (
+                users['user'],
+                f"This PR targets the un-managed branch {repo.name}:branch, it can not be merged.",
+            ),
             (users['user'], "I'm sorry. Branch `branch` is not within my remit."),
         ]
 
@@ -3201,7 +3259,7 @@ class TestRecognizeCommands:
         assert pr.state == 'opened'
 
         with repo:
-            prx.post_comment('%s r+' % botname, config['role_reviewer']['token'])
+            prx.post_comment(f'{botname} r+', config['role_reviewer']['token'])
         assert pr.state == 'approved'
 
     @pytest.mark.parametrize('indent', ['', '\N{SPACE}', '\N{SPACE}'*4, '\N{TAB}'])
@@ -3222,7 +3280,7 @@ class TestRecognizeCommands:
         assert pr.state == 'opened'
 
         with repo:
-            prx.post_comment('%shansen r+' % indent, config['role_reviewer']['token'])
+            prx.post_comment(f'{indent}hansen r+', config['role_reviewer']['token'])
         assert pr.state == 'approved'
 
     def test_unknown_commands(self, repo, env, config, users):
@@ -3581,7 +3639,10 @@ class TestFeedback:
         assert prx.comments == [
             seen(env, prx, users),
             (users['reviewer'], 'hansen r+'),
-            (users['user'], "@%s, you may want to rebuild or fix this PR as it has failed CI." % users['reviewer'])
+            (
+                users['user'],
+                f"@{users['reviewer']}, you may want to rebuild or fix this PR as it has failed CI.",
+            ),
         ]
 class TestInfrastructure:
     def test_protection(self, repo):
@@ -3608,7 +3669,7 @@ def log_to_node(log):
     ids = {c['sha'] for c in log}
     parents = {p['sha'] for c in log for p in c['parents']}
     missing = parents - ids
-    assert parents, "Didn't find %s in log" % missing
+    assert parents, f"Didn't find {missing} in log"
 
     # github doesn't necessarily log topologically maybe?
     todo = list(reversed(log))

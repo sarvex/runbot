@@ -38,8 +38,7 @@ def _simple_init(repo):
     repo.make_ref('heads/master', m)
     c1 = repo.make_commit(m, 'first', None, tree={'m': 'c1'})
     c2 = repo.make_commit(c1, 'second', None, tree={'m': 'c2'})
-    prx = repo.make_pr(title='title', body='body', target='master', head=c2)
-    return prx
+    return repo.make_pr(title='title', body='body', target='master', head=c2)
 
 class re_matches:
     def __init__(self, pattern, flags=0):
@@ -49,7 +48,7 @@ class re_matches:
         return self._r.match(text)
 
     def __repr__(self):
-        return '~' + self._r.pattern + '~'
+        return f'~{self._r.pattern}~'
 
 def seen(env, pr, users):
     return users['user'], f'[Pull request status dashboard]({to_pr(env, pr).url}).'

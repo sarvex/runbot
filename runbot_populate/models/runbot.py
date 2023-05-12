@@ -41,13 +41,13 @@ class Runbot(models.AbstractModel):
                     self.env['runbot.branch'].create({'remote_id': dev_remote.id, 'name': bundle.name, 'is_pr': False})
                     if not bundle.is_base:
                         mock_github.return_value = {
-                            'base': {
-                                'ref': bundle.base_id.name
-                            },
+                            'base': {'ref': bundle.base_id.name},
                             'head': {
-                                'label': '%s:%s' % (dev_remote.owner, bundle.name),
-                                'repo': {'full_name': '%s/%s' % (dev_remote.owner, dev_remote.repo_name)}
-                            }
+                                'label': f'{dev_remote.owner}:{bundle.name}',
+                                'repo': {
+                                    'full_name': f'{dev_remote.owner}/{dev_remote.repo_name}'
+                                },
+                            },
                         }
                         branch = self.env['runbot.branch'].create({
                             'remote_id': main_remote.id,
@@ -77,14 +77,18 @@ class Runbot(models.AbstractModel):
                 batch = self.env['runbot.batch'].create(values)
                 bundle.last_batch = batch
                 for repo in bundle.project_id.repo_ids:
-                    commit = self.env['runbot.commit']._get('%s00b%s0000ba%s000' % (repo.id, bundle.id, batch.id), repo.id, {
-                        'author': 'Author',
-                        'author_email': 'author@example.com',
-                        'committer': 'Committer',
-                        'committer_email': 'committer@example.com',
-                        'subject': '[IMP] core: come imp',
-                        'date': fields.Datetime.now(),
-                    })
+                    commit = self.env['runbot.commit']._get(
+                        f'{repo.id}00b{bundle.id}0000ba{batch.id}000',
+                        repo.id,
+                        {
+                            'author': 'Author',
+                            'author_email': 'author@example.com',
+                            'committer': 'Committer',
+                            'committer_email': 'committer@example.com',
+                            'subject': '[IMP] core: come imp',
+                            'date': fields.Datetime.now(),
+                        },
+                    )
                     branches = bundle.branch_ids.filtered(lambda b: b.remote_id.repo_id == repo)
                     for branch in branches:
                         branch.head = commit
@@ -107,7 +111,7 @@ class Runbot(models.AbstractModel):
                 mock_git.side_effect = git
                 with mute_logger('odoo.addons.runbot.models.batch'):
                     batch._prepare()
-                
+
                 if i != nb_batch - 1:
                     for slot in batch.slot_ids:
                         if slot.build_id:
@@ -117,7 +121,12 @@ class Runbot(models.AbstractModel):
                                 build._log('******','Some log')
                                 for config in (linting_config, security_config):
                                     child = build._add_child({'config_id': config.id})
-                                    build._log('create_build', 'created with config %s' % config.name, log_type='subbuild', path=str(child.id))
+                                    build._log(
+                                        'create_build',
+                                        f'created with config {config.name}',
+                                        log_type='subbuild',
+                                        path=str(child.id),
+                                    )
                                     child.local_state = 'done'
                                     child.local_result = 'ok'
                                 child.description = "Description for security"
@@ -127,7 +136,7 @@ class Runbot(models.AbstractModel):
                                 build._log('******','Some log\n with multiple lines', level='ERROR')
                                 build._log('******','**Some** *markdown* [log](http://example.com)', log_type='markdown')
                                 build._log('******','Step x finished', level='SEPARATOR')
-                            
+
                             build.local_state = 'done'
                             build.local_result = 'ok' if bundle.sticky else 'ko'
 

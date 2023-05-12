@@ -99,11 +99,9 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     pr_repo, pr_ref = prc.branch
     with pr_repo:
         pr_repo.make_commits(
-            # if just given a branch name, goes and gets it from pr_repo whose
-            # "b" was cloned before that branch got rolled back
             'c',
             Commit('h should indeed be xxx', tree={'h': 'xxx'}),
-            ref='heads/%s' % pr_ref,
+            ref=f'heads/{pr_ref}',
             make=False,
         )
     env.run_crons()
@@ -206,11 +204,9 @@ def test_conflict_deleted(env, config, make_repo):
     pr_repo, pr_ref = get_pr.branch
     with pr_repo:
         pr_repo.make_commits(
-            # if just given a branch name, goes and gets it from pr_repo whose
-            # "b" was cloned before that branch got rolled back
             prod.commit('b').id,
             Commit('f should indeed be removed', tree={'g': 'c'}, reset=True),
-            ref='heads/%s' % pr_ref,
+            ref=f'heads/{pr_ref}',
             make=False,
         )
     env.run_crons()

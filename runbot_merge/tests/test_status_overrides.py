@@ -89,15 +89,20 @@ def test_basic(env, project, make_repo, users, setreviewers, config):
         (users['reviewer'], 'hansen r+'),
         seen(env, pr, users),
         (users['reviewer'], 'hansen override=l/int'),
-        (users['user'], "I'm sorry, @{}. You are not allowed to override this status.".format(users['reviewer'])),
+        (
+            users['user'],
+            f"I'm sorry, @{users['reviewer']}. You are not allowed to override this status.",
+        ),
         (users['other'], "hansen override=l/int"),
     ]
     assert pr_id.statuses == '{}'
-    assert json.loads(pr_id.overrides) == {'l/int': {
-        'state': 'success',
-        'target_url': comments[-1]['html_url'],
-        'description': 'Overridden by @{}'.format(users['other']),
-    }}
+    assert json.loads(pr_id.overrides) == {
+        'l/int': {
+            'state': 'success',
+            'target_url': comments[-1]['html_url'],
+            'description': f"Overridden by @{users['other']}",
+        }
+    }
 
 def test_multiple(env, project, make_repo, users, setreviewers, config):
     """ Test that overriding multiple statuses in the same comment works
@@ -155,12 +160,12 @@ def test_multiple(env, project, make_repo, users, setreviewers, config):
             'l/int': {
                 'state': 'success',
                 'target_url': comments[-1]['html_url'],
-                'description': 'Overridden by @{}'.format(users['other']),
+                'description': f"Overridden by @{users['other']}",
             },
             'c/i': {
                 'state': 'success',
                 'target_url': comments[-1]['html_url'],
-                'description': 'Overridden by @{}'.format(users['other']),
+                'description': f"Overridden by @{users['other']}",
             },
         }
 
@@ -207,8 +212,10 @@ def test_no_repository(env, project, make_repo, users, setreviewers, config):
         (users['other'], "hansen override=l/int"),
     ]
     assert pr_id.statuses == '{}'
-    assert json.loads(pr_id.overrides) == {'l/int': {
-        'state': 'success',
-        'target_url': comments[-1]['html_url'],
-        'description': 'Overridden by @{}'.format(users['other']),
-    }}
+    assert json.loads(pr_id.overrides) == {
+        'l/int': {
+            'state': 'success',
+            'target_url': comments[-1]['html_url'],
+            'description': f"Overridden by @{users['other']}",
+        }
+    }
