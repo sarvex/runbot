@@ -31,10 +31,10 @@ class Partner(models.Model):
             if partner.email:
                 email = parseaddr(partner.email)[1]
             elif partner.github_login:
-                email = '%s@users.noreply.github.com' % partner.github_login
+                email = f'{partner.github_login}@users.noreply.github.com'
             else:
                 email = ''
-            partner.formatted_email = '%s <%s>' % (partner.name, email)
+            partner.formatted_email = f'{partner.name} <{email}>'
 
     def fetch_github_email(self):
         # this requires a token in order to fetch the email field, otherwise
@@ -56,8 +56,8 @@ class PartnerMerge(models.TransientModel):
             new_login = p.github_login or new_login
         if new_login:
             src_partners.write({'github_login': False})
-        if new_login and not dst_partner.github_login:
-            dst_partner.github_login = new_login
+            if not dst_partner.github_login:
+                dst_partner.github_login = new_login
         super()._update_values(src_partners, dst_partner)
 
 class ReviewRights(models.Model):

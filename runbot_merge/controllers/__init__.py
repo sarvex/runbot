@@ -24,15 +24,20 @@ class MergebotController(Controller):
         c = EVENTS.get(event)
         if not c:
             _logger.warning('Unknown event %s', event)
-            return 'Unknown event {}'.format(event)
+            return f'Unknown event {event}'
 
         repo = request.jsonrequest['repository']['full_name']
         env = request.env(user=1)
 
-        secret = env['runbot_merge.repository'].search([
-            ('name', '=', repo),
-        ]).project_id.secret
-        if secret:
+        if (
+            secret := env['runbot_merge.repository']
+            .search(
+                [
+                    ('name', '=', repo),
+                ]
+            )
+            .project_id.secret
+        ):
             signature = 'sha1=' + hmac.new(secret.encode('ascii'), req.get_data(), hashlib.sha1).hexdigest()
             if not hmac.compare_digest(signature, req.headers.get('X-Hub-Signature', '')):
                 _logger.warning("Ignored hook with incorrect signature %s",
@@ -95,12 +100,14 @@ def handle_pr(env, event):
             'pull_request': pr['number'],
             **info,
         })
+
     def find(target):
         return env['runbot_merge.pull_requests'].search([
             ('repository', '=', repo.id),
             ('number', '=', pr['number']),
             ('target', '=', target.id),
         ])
+
     # edition difficulty: pr['base']['ref] is the *new* target, the old one
     # is at event['change']['base']['ref'] (if the target changed), so edition
     # handling must occur before the rest of the steps
@@ -218,11 +225,11 @@ def handle_pr(env, event):
             )
             return 'Ignored: could not lock rows (probably being merged)'
 
-    if event['action'] == 'reopened' :
+    if event['action'] == 'reopened':
         if pr_obj.state == 'merged':
             feedback(
                 close=True,
-                message="@%s ya silly goose you can't reopen a PR that's been merged PR." % event['sender']['login']
+                message=f"@{event['sender']['login']} ya silly goose you can't reopen a PR that's been merged PR.",
             )
 
         if pr_obj.state == 'closed':
@@ -293,7 +300,7 @@ def handle_review(env, event):
         target=event['pull_request']['base']['ref'])
 
 def handle_ping(env, event):
-    print("Got ping! {}".format(event['zen']))
+    print(f"Got ping! {event['zen']}")
     return "pong"
 
 EVENTS = {

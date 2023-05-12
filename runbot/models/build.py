@@ -76,25 +76,25 @@ class BuildParameters(models.Model):
     # @api.depends('version_id', 'project_id', 'extra_params', 'config_id', 'config_data', 'modules', 'commit_link_ids', 'builds_reference_ids')
     def _compute_fingerprint(self):
         for param in self:
-            cleaned_vals = {
-                'version_id': param.version_id.id,
-                'project_id': param.project_id.id,
-                'trigger_id': param.trigger_id.id,
-                'extra_params': param.extra_params or '',
-                'config_id': param.config_id.id,
-                'config_data': param.config_data.dict,
-                'modules': param.modules or '',
-                'commit_link_ids': sorted(param.commit_link_ids.commit_id.ids),
-                'builds_reference_ids': sorted(param.builds_reference_ids.ids),
-                'upgrade_from_build_id': param.upgrade_from_build_id.id,
-                'upgrade_to_build_id': param.upgrade_to_build_id.id,
-                'dump_db': param.dump_db.id,
-                'dockerfile_id': param.dockerfile_id.id,
-                'skip_requirements': param.skip_requirements,
-            }
             if param.trigger_id.batch_dependent:
-                cleaned_vals['create_batch_id'] = param.create_batch_id.id,
-            param.fingerprint = hashlib.sha256(str(cleaned_vals).encode('utf8')).hexdigest()
+                cleaned_vals = {
+                    'version_id': param.version_id.id,
+                    'project_id': param.project_id.id,
+                    'trigger_id': param.trigger_id.id,
+                    'extra_params': param.extra_params or '',
+                    'config_id': param.config_id.id,
+                    'config_data': param.config_data.dict,
+                    'modules': param.modules or '',
+                    'commit_link_ids': sorted(param.commit_link_ids.commit_id.ids),
+                    'builds_reference_ids': sorted(param.builds_reference_ids.ids),
+                    'upgrade_from_build_id': param.upgrade_from_build_id.id,
+                    'upgrade_to_build_id': param.upgrade_to_build_id.id,
+                    'dump_db': param.dump_db.id,
+                    'dockerfile_id': param.dockerfile_id.id,
+                    'skip_requirements': param.skip_requirements,
+                }
+                    cleaned_vals['create_batch_id'] = param.create_batch_id.id,
+                param.fingerprint = hashlib.sha256(str(cleaned_vals).encode('utf8')).hexdigest()
 
     @api.depends('commit_link_ids')
     def _compute_commit_ids(self):
@@ -103,8 +103,7 @@ class BuildParameters(models.Model):
 
     def create(self, values):
         params = self.new(values)
-        match = self._find_existing(params.fingerprint)
-        if match:
+        if match := self._find_existing(params.fingerprint):
             return match
         values = self._convert_to_write(params._cache)
         return super().create(values)
@@ -254,8 +253,9 @@ class BuildResult(models.Model):
         max_days_child = int(icp.get_param('runbot.db_gc_days_child', default=15))
         for build in self:
             ref_date = fields.Datetime.from_string(build.job_end or build.create_date or fields.Datetime.now())
-            max_days = max_days_main if not build.parent_id else max_days_child
-            max_days += int(build.gc_delay if build.gc_delay else 0)
+            max_days = (
+                max_days_main if not build.parent_id else max_days_child
+            ) + int(build.gc_delay if build.gc_delay else 0)
             build.gc_date = ref_date + datetime.timedelta(days=(max_days))
 
     @api.depends('description')
@@ -272,7 +272,7 @@ class BuildResult(models.Model):
             build.ancestors = self.browse([int(b) for b in build.parent_path.split('/') if b])
 
     def _get_youngest_state(self, states):
-        index = min([self._get_state_score(state) for state in states])
+        index = min(self._get_state_score(state) for state in states)
         return state_order[index]
 
     def _get_state_score(self, result):
@@ -283,20 +283,23 @@ class BuildResult(models.Model):
         for record in self:
             if record.local_result and record._get_result_score(record.local_result) >= record._get_result_score('ko'):
                 record.global_result = record.local_result
+            elif children_ids := [
+                child for child in record.children_ids if not child.orphan_result
+            ]:
+                children_result = record._get_worst_result([child.global_result for child in children_ids], max_res='ko')
+                record.global_result = (
+                    record._get_worst_result(
+                        [record.local_result, children_result]
+                    )
+                    if record.local_result
+                    else children_result
+                )
             else:
-                children_ids = [child for child in record.children_ids if not child.orphan_result]
-                if children_ids:
-                    children_result = record._get_worst_result([child.global_result for child in children_ids], max_res='ko')
-                    if record.local_result:
-                        record.global_result = record._get_worst_result([record.local_result, children_result])
-                    else:
-                        record.global_result = children_result
-                else:
-                    record.global_result = record.local_result
+                record.global_result = record.local_result
 
     def _get_worst_result(self, results, max_res=False):
         results = [result for result in results if result]  # filter Falsy values
-        index = max([self._get_result_score(result) for result in results]) if results else 0
+        index = max((self._get_result_score(result) for result in results), default=0)
         if max_res:
             return result_order[min([index, self._get_result_score(max_res)])]
         return result_order[index]
@@ -312,11 +315,14 @@ class BuildResult(models.Model):
     def copy_data(self, default=None):
         values = super().copy_data(default)[0] or {}
         default = dict(default or [])
-        values = {key: value for key, value in values.items() if (key in COPY_WHITELIST or key in default)}
-        values.update({
+        values = {
+            key: value
+            for key, value in values.items()
+            if (key in COPY_WHITELIST or key in default)
+        } | {
             'host': 'PAUSED',  # hack to keep the build in pending waiting for a manual update. Todo: add a paused flag instead
             'local_state': 'pending',
-        })
+        }
         return [values]
 
     def write(self, values):
@@ -386,18 +392,18 @@ class BuildResult(models.Model):
         domain = icp.get_param('runbot.runbot_domain', fqdn())
         for build in self:
             if nginx:
-                build.domain = "%s.%s" % (build.dest, build.host)
+                build.domain = f"{build.dest}.{build.host}"
             else:
-                build.domain = "%s:%s" % (domain, build.port)
+                build.domain = f"{domain}:{build.port}"
 
     @api.depends_context('batch')
     def _compute_build_url(self):
         batch = self.env.context.get('batch')
         for build in self:
             if batch:
-                build.build_url = "/runbot/batch/%s/build/%s" % (batch.id, build.id)
+                build.build_url = f"/runbot/batch/{batch.id}/build/{build.id}"
             else:
-                build.build_url = "/runbot/build/%s" % build.id
+                build.build_url = f"/runbot/build/{build.id}"
 
     @api.depends('job_start', 'job_end')
     def _compute_job_time(self):
@@ -441,20 +447,25 @@ class BuildResult(models.Model):
             values['host'] = self.host
             values['keep_host'] = True
         if self.parent_id:
-            values.update({
+            values |= {
                 'parent_id': self.parent_id.id,
                 'description': self.description,
-            })
+            }
             self.orphan_result = True
 
         new_build = self.create(values)
         if self.parent_id:
             new_build._github_status()
         user = request.env.user if request else self.env.user
-        new_build._log('rebuild', 'Rebuild initiated by %s%s' % (user.name, (' :%s' % message) if message else ''))
+        new_build._log(
+            'rebuild',
+            f"Rebuild initiated by {user.name}{f' :{message}' if message else ''}",
+        )
 
         if self.local_state != 'done':
-            self._ask_kill('Killed by rebuild requested by %s (%s) (new build:%s)' % (user.name, user.id, new_build.id))
+            self._ask_kill(
+                f'Killed by rebuild requested by {user.name} ({user.id}) (new build:{new_build.id})'
+            )
 
         if not self.parent_id:
             slots = self.env['runbot.batch.slot'].search([('build_id', '=', self.id)])
@@ -485,8 +496,7 @@ class BuildResult(models.Model):
         full_gc_days = int(icp.get_param('runbot.full_gc_days', default=365))
 
         for dest in dest_list:
-            build = self._build_from_dest(dest)
-            if build:
+            if build := self._build_from_dest(dest):
                 dest_by_builds_ids[build.id].append(dest)
             elif dest != hide_in_logs:
                 ignored.add(dest)
@@ -494,8 +504,7 @@ class BuildResult(models.Model):
             _logger.info('%s (%s) not deleted because not dest format', label, list(ignored))
         builds = self.browse(dest_by_builds_ids)
         existing = builds.exists()
-        remaining = (builds - existing)
-        if remaining:
+        if remaining := (builds - existing):
             dest_list = [dest for sublist in [dest_by_builds_ids[rem_id] for rem_id in remaining.ids] for dest in sublist]
             _logger.info('(%s) (%s) not deleted because no corresponding build found', label, " ".join(dest_list))
         for build in existing:
@@ -564,7 +573,7 @@ class BuildResult(models.Model):
     def _find_port(self):
         # currently used port
         ids = self.search([('local_state', 'not in', ['pending', 'done']), ('host', '=', fqdn())])
-        ports = set(i['port'] for i in ids.read(['port']))
+        ports = {i['port'] for i in ids.read(['port'])}
 
         # starting port
         icp = self.env['ir.config_parameter']
@@ -578,19 +587,19 @@ class BuildResult(models.Model):
     def _logger(self, *l):
         l = list(l)
         for build in self:
-            l[0] = "%s %s" % (build.dest, l[0])
+            l[0] = f"{build.dest} {l[0]}"
             _logger.info(*l)
 
     def _get_docker_name(self):
         self.ensure_one()
-        return '%s_%s' % (self.dest, self.active_step.name)
+        return f'{self.dest}_{self.active_step.name}'
 
     def _init_pendings(self, host):
         for build in self:
             if build.local_state != 'pending':
-                raise UserError("Build %s is not pending" % build.id)
+                raise UserError(f"Build {build.id} is not pending")
             if build.host != host.name:
-                raise UserError("Build %s does not have correct host" % build.id)
+                raise UserError(f"Build {build.id} does not have correct host")
             # allocate port and schedule first job
             values = {
                 'port': self._find_port(),
@@ -598,14 +607,17 @@ class BuildResult(models.Model):
                 'build_start': now(),
                 'job_end': False,
             }
-            values.update(build._next_job_values())
+            values |= build._next_job_values()
             build.write(values)
             if not build.active_step:
                 build._log('_schedule', 'No job in config, doing nothing')
                 build.local_result = 'warn'
                 continue
             try:
-                build._log('_schedule', 'Init build environment with config %s ' % build.params_id.config_id.name)
+                build._log(
+                    '_schedule',
+                    f'Init build environment with config {build.params_id.config_id.name} ',
+                )
                 os.makedirs(build._path('logs'), exist_ok=True)
             except Exception:
                 _logger.exception('Failed initiating build %s', build.dest)
@@ -662,20 +674,27 @@ class BuildResult(models.Model):
         icp = self.env['ir.config_parameter']
         for build in self:
             if build.local_state not in ['testing', 'running']:
-                raise UserError("Build %s is not testing/running: %s" % (build.id, build.local_state))
-            if build.local_state == 'testing':
-                # failfast in case of docker error (triggered in database)
-                if build.triggered_result and not build.active_step.ignore_triggered_result:
-                    worst_result = self._get_worst_result([build.triggered_result, build.local_result])
-                    if worst_result != build.local_result:
-                        build.local_result = build.triggered_result
-                        build._github_status()  # failfast
+                raise UserError(
+                    f"Build {build.id} is not testing/running: {build.local_state}"
+                )
+            if (
+                build.local_state == 'testing'
+                and build.triggered_result
+                and not build.active_step.ignore_triggered_result
+            ):
+                worst_result = self._get_worst_result([build.triggered_result, build.local_result])
+                if worst_result != build.local_result:
+                    build.local_result = build.triggered_result
+                    build._github_status()  # failfast
             # check if current job is finished
             _docker_state = docker_state(build._get_docker_name(), build._path())
             if _docker_state == 'RUNNING':
                 timeout = min(build.active_step.cpu_limit, int(icp.get_param('runbot.runbot_timeout', default=10000)))
                 if build.local_state != 'running' and build.job_time > timeout:
-                    build._log('_schedule', '%s time exceeded (%ss)' % (build.active_step.name if build.active_step else "?", build.job_time))
+                    build._log(
+                        '_schedule',
+                        f'{build.active_step.name if build.active_step else "?"} time exceeded ({build.job_time}s)',
+                    )
                     build._kill(result='killed')
                 continue
             elif _docker_state in ('UNKNOWN', 'GHOST') and (build.local_state == 'running' or build.active_step._is_docker_step()):  # todo replace with docker_start
@@ -683,10 +702,16 @@ class BuildResult(models.Model):
                 if docker_time < 5:
                     continue
                 elif docker_time < 60:
-                    _logger.info('container "%s" seems too take a while to start :%s' % (build.job_time, build._get_docker_name()))
+                    _logger.info(
+                        f'container "{build.job_time}" seems too take a while to start :{build._get_docker_name()}'
+                    )
                     continue
                 else:
-                    build._log('_schedule', 'Docker with state %s not started after 60 seconds, skipping' % _docker_state, level='ERROR')
+                    build._log(
+                        '_schedule',
+                        f'Docker with state {_docker_state} not started after 60 seconds, skipping',
+                        level='ERROR',
+                    )
             # No job running, make result and select nex job
             build_values = {
                 'job_end': now(),
@@ -704,14 +729,14 @@ class BuildResult(models.Model):
                 build._log('_make_results', message, level='ERROR')
                 results = {'local_result': 'ko'}
 
-            build_values.update(results)
+            build_values |= results
 
             # compute statistics before starting next job
             build.active_step._make_stats(build)
 
             build.active_step.log_end(build)
 
-            build_values.update(build._next_job_values())  # find next active_step or set to done
+            build_values |= build._next_job_values()
 
             ending_build = build.local_state not in ('done', 'running') and build_values.get('local_state') in ('done', 'running')
             if ending_build:
@@ -746,9 +771,9 @@ class BuildResult(models.Model):
     def _docker_run(self, **kwargs):
         self.ensure_one()
         if 'image_tag' not in kwargs:
-            kwargs.update({'image_tag': self.params_id.dockerfile_id.image_tag})
+            kwargs['image_tag'] = self.params_id.dockerfile_id.image_tag
         if kwargs['image_tag'] != 'odoo:DockerDefault':
-            self._log('Preparing', 'Using Dockerfile Tag %s' % kwargs['image_tag'])
+            self._log('Preparing', f"Using Dockerfile Tag {kwargs['image_tag']}")
         containers_memory_limit = self.env['ir.config_parameter'].sudo().get_param('runbot.runbot_containers_memory', 0)
         if containers_memory_limit and 'memory' not in kwargs:
             kwargs['memory'] = int(float(containers_memory_limit) * 1024 ** 3)
@@ -767,7 +792,7 @@ class BuildResult(models.Model):
         return os.path.join(root, 'build', build.dest, *l)
 
     def http_log_url(self):
-        return 'http://%s/runbot/static/build/%s/logs/' % (self.host, self.dest)
+        return f'http://{self.host}/runbot/static/build/{self.dest}/logs/'
 
     def _server(self, *path):
         """Return the absolute path to the direcory containing the server file, adding optional *path"""
@@ -788,18 +813,22 @@ class BuildResult(models.Model):
         for commit in self.env.context.get('defined_commit_ids') or self.params_id.commit_ids:
             build_export_path = self._docker_source_folder(commit)
             if build_export_path in exports:
-                self._log('_checkout', 'Multiple repo have same export path in build, some source may be missing for %s' % build_export_path, level='ERROR')
+                self._log(
+                    '_checkout',
+                    f'Multiple repo have same export path in build, some source may be missing for {build_export_path}',
+                    level='ERROR',
+                )
                 self._kill(result='ko')
             exports[build_export_path] = commit.export()
 
         checkout_time = time.time() - start
         if checkout_time > 60:
-            self._log('checkout', 'Checkout took %s seconds' % int(checkout_time))
+            self._log('checkout', f'Checkout took {int(checkout_time)} seconds')
 
         return exports
 
     def _get_available_modules(self):
-        all_modules = dict()
+        all_modules = {}
         available_modules = defaultdict(list)
         # repo_modules = []
         for commit in self.env.context.get('defined_commit_ids') or self.params_id.commit_ids:
@@ -807,11 +836,8 @@ class BuildResult(models.Model):
                 if module in all_modules:
                     self._log(
                         'Building environment',
-                        '%s is a duplicated modules (found in "%s", already defined in %s)' % (
-                            module,
-                            commit._source_path(addons_path, module, manifest_file_name),
-                            all_modules[module]._source_path(addons_path, module, manifest_file_name)),
-                        level='WARNING'
+                        f'{module} is a duplicated modules (found in "{commit._source_path(addons_path, module, manifest_file_name)}", already defined in {all_modules[module]._source_path(addons_path, module, manifest_file_name)})',
+                        level='WARNING',
                     )
                 else:
                     available_modules[commit.repo_id].append(module)
@@ -848,9 +874,9 @@ class BuildResult(models.Model):
     def _local_pg_dropdb(self, dbname):
         with local_pgadmin_cursor() as local_cr:
             pid_col = 'pid' if local_cr.connection.server_version >= 90200 else 'procpid'
-            query = 'SELECT pg_terminate_backend({}) FROM pg_stat_activity WHERE datname=%s'.format(pid_col)
+            query = f'SELECT pg_terminate_backend({pid_col}) FROM pg_stat_activity WHERE datname=%s'
             local_cr.execute(query, [dbname])
-            local_cr.execute('DROP DATABASE IF EXISTS "%s"' % dbname)
+            local_cr.execute(f'DROP DATABASE IF EXISTS "{dbname}"')
         # cleanup filestore
         datadir = appdirs.user_data_dir()
         paths = [os.path.join(datadir, pn, 'filestore', dbname) for pn in 'OpenERP Odoo'.split()]
@@ -870,7 +896,7 @@ class BuildResult(models.Model):
     def _log(self, func, message, level='INFO', log_type='runbot', path='runbot'):
 
         if len(message) > 300000:
-            message = message[:300000] + '[Truncate, message too long]'
+            message = f'{message[:300000]}[Truncate, message too long]'
 
         self.ensure_one()
         _logger.info("Build %s %s %s", self.id, func, message)
@@ -890,7 +916,7 @@ class BuildResult(models.Model):
         for build in self:
             if build.host != host:
                 continue
-            build._log('kill', 'Kill build %s' % build.dest)
+            build._log('kill', f'Kill build {build.dest}')
             docker_stop(build._get_docker_name(), build._path())
             v = {'local_state': 'done', 'requested_action': False, 'active_step': False, 'job_end': now()}
             if not build.build_end:
@@ -911,7 +937,10 @@ class BuildResult(models.Model):
         user = request.env.user if request else self.env.user
         uid = user.id
         build = self
-        message = message or 'Killing build %s, requested by %s (user #%s)' % (build.dest, user.name, uid)
+        message = (
+            message
+            or f'Killing build {build.dest}, requested by {user.name} (user #{uid})'
+        )
         build._log('_ask_kill', message)
         if build.local_state == 'pending':
             build._skip()
@@ -951,7 +980,7 @@ class BuildResult(models.Model):
             if os.path.isfile(commit._source_path(server_file)):
                 return (commit, server_file)
         _logger.error('None of %s found in commit, actual commit content:\n %s' % (commit.repo_id.server_files, os.listdir(commit._source_path())))
-        raise RunbotException('No server found in %s' % commit.dname)
+        raise RunbotException(f'No server found in {commit.dname}')
 
     def _cmd(self, python_params=None, py_version=None, local_only=True, sub_command=None):
         """Return a list describing the command to start the build
@@ -965,14 +994,26 @@ class BuildResult(models.Model):
             if not self.params_id.skip_requirements and os.path.isfile(commit_id._source_path('requirements.txt')):
                 repo_dir = self._docker_source_folder(commit_id)
                 requirement_path = os.path.join(repo_dir, 'requirements.txt')
-                pres.append(['sudo', 'pip%s' % py_version, 'install', '-r', '%s' % requirement_path])
+                pres.append(
+                    [
+                        'sudo',
+                        f'pip{py_version}',
+                        'install',
+                        '-r',
+                        f'{requirement_path}',
+                    ]
+                )
 
         addons_paths = self._get_addons_path()
         (server_commit, server_file) = self._get_server_info()
         server_dir = self._docker_source_folder(server_commit)
 
         # commandline
-        cmd = ['python%s' % py_version] + python_params + [os.path.join(server_dir, server_file)]
+        cmd = (
+            [f'python{py_version}']
+            + python_params
+            + [os.path.join(server_dir, server_file)]
+        )
         if sub_command:
             cmd += [sub_command]
         cmd += ['--addons-path', ",".join(addons_paths)]
@@ -986,7 +1027,7 @@ class BuildResult(models.Model):
         command = Command(pres, cmd, [], cmd_checker=build)
 
         # use the username of the runbot host to connect to the databases
-        command.add_config_tuple('db_user', '%s' % pwd.getpwuid(os.getuid()).pw_name)
+        command.add_config_tuple('db_user', f'{pwd.getpwuid(os.getuid()).pw_name}')
 
         if local_only:
             if grep(config_path, "--http-interface"):
@@ -998,8 +1039,8 @@ class BuildResult(models.Model):
             logdb_uri = self.env['ir.config_parameter'].get_param('runbot.runbot_logdb_uri')
             logdb = self.env.cr.dbname
             if logdb_uri and grep(build._server('sql_db.py'), 'allow_uri'):
-                logdb = '%s' % logdb_uri
-            command.add_config_tuple("log_db", "%s" % logdb)
+                logdb = f'{logdb_uri}'
+            command.add_config_tuple("log_db", f"{logdb}")
             if grep(config_path, 'log-db-level'):
                 command.add_config_tuple("log_db_level", '25')
 
@@ -1049,7 +1090,12 @@ class BuildResult(models.Model):
             new_step = step_ids[next_index]  # job to do, state is job_state (testing or running)
             if new_step.domain_filter and not self.filtered_domain(safe_eval(new_step.domain_filter)):
 
-                self._log('run', '**Skipping** step ~~%s~~ from config **%s**' % (new_step.name, self.params_id.config_id.name), log_type='markdown', level='SEPARATOR')
+                self._log(
+                    'run',
+                    f'**Skipping** step ~~{new_step.name}~~ from config **{self.params_id.config_id.name}**',
+                    log_type='markdown',
+                    level='SEPARATOR',
+                )
                 next_index += 1
                 continue
             break
@@ -1082,7 +1128,7 @@ class BuildResult(models.Model):
             with open(file_path, mode) as f:
                 return f.read()
         except Exception as e:
-            self._log('readfile', 'exception: %s' % e)
+            self._log('readfile', f'exception: {e}')
             return False
 
     def write_file(self, file, data, mode='w'):
@@ -1093,7 +1139,7 @@ class BuildResult(models.Model):
             with open(file_path, mode) as f:
                 f.write(data)
         except Exception as e:
-            self._log('write_file', 'exception: %s' % e)
+            self._log('write_file', f'exception: {e}')
             return False
 
     def make_dirs(self, dir_path):
@@ -1101,7 +1147,7 @@ class BuildResult(models.Model):
         try:
             os.makedirs(full_path, exist_ok=True)
         except Exception as e:
-            self._log('make_dirs', 'exception: %s' % e)
+            self._log('make_dirs', f'exception: {e}')
             return False
 
     def build_type_label(self):
@@ -1150,18 +1196,19 @@ class BuildResult(models.Model):
                 elif build.global_state in ('pending', 'testing'):
                     state = 'pending'
                 elif build.global_state in ('running', 'done'):
-                    state = 'error'
-                    if build.global_result == 'ok':
-                        state = 'success'
+                    state = 'success' if build.global_result == 'ok' else 'error'
                 else:
                     _logger.info("skipping github status for build %s ", build.id)
                     continue
 
                 runbot_domain = self.env['runbot.runbot']._domain()
                 trigger = self.params_id.trigger_id
-                target_url = trigger.ci_url or "http://%s/runbot/build/%s" % (runbot_domain, build.id)
-                desc = trigger.ci_description or " (runtime %ss)" % (build.job_time,)
                 if trigger.ci_context:
+                    target_url = (
+                        trigger.ci_url
+                        or f"http://{runbot_domain}/runbot/build/{build.id}"
+                    )
+                    desc = trigger.ci_description or f" (runtime {build.job_time}s)"
                     for build_commit in self.params_id.commit_link_ids:
                         commit = build_commit.commit_id
                         if 'base_' not in build_commit.match_type and commit.repo_id in trigger.repo_ids:

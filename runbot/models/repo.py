@@ -70,10 +70,17 @@ class Trigger(models.Model):
                 trigger.upgrade_step_id = self._upgrade_step_from_config(trigger.config_id)
 
     def _upgrade_step_from_config(self, config):
-        upgrade_step = next((step_order.step_id for step_order in config.step_order_ids if step_order.step_id._is_upgrade_step()), False)
-        if not upgrade_step:
+        if upgrade_step := next(
+            (
+                step_order.step_id
+                for step_order in config.step_order_ids
+                if step_order.step_id._is_upgrade_step()
+            ),
+            False,
+        ):
+            return upgrade_step
+        else:
             raise UserError('Upgrade trigger should have a config with step of type Configure Upgrade')
-        return upgrade_step
 
     def _reference_builds(self, bundle):
         self.ensure_one()
@@ -85,9 +92,7 @@ class Trigger(models.Model):
         return []
 
     def get_version_domain(self):
-        if self.version_domain:
-            return safe_eval(self.version_domain)
-        return []
+        return safe_eval(self.version_domain) if self.version_domain else []
 
 
 class Remote(models.Model):
@@ -132,7 +137,7 @@ class Remote(models.Model):
     @api.depends('repo_domain', 'owner', 'repo_name')
     def _compute_base_url(self):
         for remote in self:
-            remote.base_url = '%s/%s/%s' % (remote.repo_domain, remote.owner, remote.repo_name)
+            remote.base_url = f'{remote.repo_domain}/{remote.owner}/{remote.repo_name}'
 
     @api.depends('name', 'base_url')
     def _compute_short_name(self):
@@ -168,7 +173,7 @@ class Remote(models.Model):
             if remote.owner and remote.repo_name and remote.repo_domain:
                 url = url.replace(':owner', remote.owner)
                 url = url.replace(':repo', remote.repo_name)
-                url = 'https://api.%s%s' % (remote.repo_domain, url)
+                url = f'https://api.{remote.repo_domain}{url}'
                 session = requests.Session()
                 if remote.token:
                     session.auth = (remote.token, 'x-oauth-basic')
@@ -187,10 +192,13 @@ class Remote(models.Model):
                             if try_count > 0:
                                 _logger.info('Success after %s tries', (try_count + 1))
                             if recursive:
-                                link = response.headers.get('link')
-                                url = False
-                                if link:
-                                    url = {link.split(';')[1]: link.split(';')[0] for link in link.split(',')}.get(' rel="next"')
+                                if link := response.headers.get('link'):
+                                    url = {
+                                        link.split(';')[1]: link.split(';')[0]
+                                        for link in link.split(',')
+                                    }.get(' rel="next"')
+                                else:
+                                    url = False
                                 if url:
                                     url = url.strip('<> ')
                                 yield response.json()
@@ -202,12 +210,11 @@ class Remote(models.Model):
                             try_count += 1
                             if try_count < nb_tries:
                                 time.sleep(2)
+                            elif ignore_errors:
+                                _logger.exception('Ignored github error %s %r (try %s/%s)', url, payload, try_count, nb_tries)
+                                url = False
                             else:
-                                if ignore_errors:
-                                    _logger.exception('Ignored github error %s %r (try %s/%s)', url, payload, try_count, nb_tries)
-                                    url = False
-                                else:
-                                    raise
+                                raise
 
 
 class Repo(models.Model):
@@ -305,24 +312,30 @@ class Repo(models.Model):
         self.ensure_one()
         config_args = []
         if self.identity_file:
-            config_args = ['-c', 'core.sshCommand=ssh -i %s/.ssh/%s' % (str(Path.home()), self.identity_file)]
+            config_args = [
+                '-c',
+                f'core.sshCommand=ssh -i {str(Path.home())}/.ssh/{self.identity_file}',
+            ]
         cmd = ['git', '-C', self.path] + config_args + cmd
         _logger.info("git command: %s", ' '.join(cmd))
         return subprocess.check_output(cmd, stderr=subprocess.STDOUT).decode(errors=errors)
 
     def _fetch(self, sha):
+        if self._hash_exists(sha):
+            return
+        self._update(force=True)
         if not self._hash_exists(sha):
-            self._update(force=True)
+            for remote in self.remote_ids:
+                try:
+                    self._git(['fetch', remote.remote_name, sha])
+                    _logger.info('Success fetching specific head %s on %s', sha, remote)
+                    break
+                except subprocess.CalledProcessError:
+                    pass
             if not self._hash_exists(sha):
-                for remote in self.remote_ids:
-                    try:
-                        self._git(['fetch', remote.remote_name, sha])
-                        _logger.info('Success fetching specific head %s on %s', sha, remote)
-                        break
-                    except subprocess.CalledProcessError:
-                        pass
-                if not self._hash_exists(sha):
-                    raise RunbotException("Commit %s is unreachable. Did you force push the branch?" % sha)
+                raise RunbotException(
+                    f"Commit {sha} is unreachable. Did you force push the branch?"
+                )
 
     def _hash_exists(self, commit_hash):
         """ Verify that a commit hash exists in the repo """
@@ -357,7 +370,7 @@ class Repo(models.Model):
             try:
                 self.set_ref_time(get_ref_time)
                 fields = ['refname', 'objectname', 'committerdate:iso8601', 'authorname', 'authoremail', 'subject', 'committername', 'committeremail']
-                fmt = "%00".join(["%(" + field + ")" for field in fields])
+                fmt = "%00".join([f"%({field})" for field in fields])
                 cmd = ['for-each-ref', '--format', fmt, '--sort=-committerdate', 'refs/*/heads/*']
                 if any(remote.fetch_pull for remote in self.remote_ids):
                     cmd.append('refs/*/pull/*')
@@ -365,7 +378,7 @@ class Repo(models.Model):
                 git_refs = git_refs.strip()
                 if not git_refs:
                     return []
-                refs = [tuple(field for field in line.split('\x00')) for line in git_refs.split('\n')]
+                refs = [tuple(line.split('\x00')) for line in git_refs.split('\n')]
                 refs = [r for r in refs if dateutil.parser.parse(r[2][:19]) + datetime.timedelta(days=max_age) > datetime.datetime.now() or self.env['runbot.branch'].match_is_base(r[0].split('\n')[-1])]
                 if ignore:
                     refs = [r for r in refs if r[0].split('/')[-1] not in ignore]
@@ -481,16 +494,16 @@ class Repo(models.Model):
                 git_config = self.env['ir.ui.view'].render_template("runbot.git_config", template_params)
                 with open(git_config_path, 'wb') as config_file:
                     config_file.write(git_config)
-                _logger.info('Config updated for repo %s' % repo.name)
+                _logger.info(f'Config updated for repo {repo.name}')
             else:
-                _logger.info('Repo not cloned, skiping config update for %s' % repo.name)
+                _logger.info(f'Repo not cloned, skiping config update for {repo.name}')
 
     def _git_init(self):
         """ Clone the remote repo if needed """
         self.ensure_one()
         repo = self
         if not os.path.isdir(os.path.join(repo.path, 'refs')):
-            _logger.info("Initiating repository '%s' in '%s'" % (repo.name, repo.path))
+            _logger.info(f"Initiating repository '{repo.name}' in '{repo.path}'")
             git_init = subprocess.run(['git', 'init', '--bare', repo.path], stderr=subprocess.PIPE)
             if git_init.returncode:
                 _logger.warning('Git init failed with code %s and message: "%s"', git_init.returncode, git_init.stderr)
@@ -515,9 +528,8 @@ class Repo(models.Model):
                 if not repo.hook_time or (repo.last_processed_hook_time and repo.hook_time <= repo.last_processed_hook_time):
                     return False
                 repo.last_processed_hook_time = repo.hook_time
-            if repo.mode == 'poll':
-                if (time.time() < fetch_time + poll_delay):
-                    return False
+            if repo.mode == 'poll' and (time.time() < fetch_time + poll_delay):
+                return False
 
         _logger.info('Updating repo %s', repo.name)
         return self._update_fetch_cmd()
@@ -537,10 +549,12 @@ class Repo(models.Model):
                 try_count += 1
                 delay = delay * 1.5 if delay else 0.5
                 if try_count > 4:
-                    message = 'Failed to fetch repo %s: %s' % (self.name, e.output.decode())
+                    message = f'Failed to fetch repo {self.name}: {e.output.decode()}'
                     host = self.env['runbot.host']._get_current()
                     host.message_post(body=message)
-                    self.env['runbot.runbot'].warning('Host %s got reserved because of fetch failure' % host.name)
+                    self.env['runbot.runbot'].warning(
+                        f'Host {host.name} got reserved because of fetch failure'
+                    )
                     _logger.exception(message)
                     host.disable()
         return success

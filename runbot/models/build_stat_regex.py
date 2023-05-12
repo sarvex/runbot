@@ -37,7 +37,7 @@ class BuildStatRegex(models.Model):
             try:
                 r = re.compile(rec.regex)
             except re.error as e:
-                raise ValidationError("Unable to compile regular expression: %s" % e)
+                raise ValidationError(f"Unable to compile regular expression: {e}")
             # verify that a named group exist in the pattern
             if not re.search(VALUE_PATTERN, r.pattern):
                 raise ValidationError(
@@ -65,7 +65,7 @@ class BuildStatRegex(models.Model):
                         )
                         continue
                     key = (
-                        "%s.%s" % (build_stat_regex.name, group_dict["key"])
+                        f'{build_stat_regex.name}.{group_dict["key"]}'
                         if "key" in group_dict
                         else build_stat_regex.name
                     )

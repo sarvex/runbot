@@ -14,8 +14,7 @@ class UpgradeExceptions(models.Model):
     team_id = fields.Many2one('runbot.team', 'Assigned team', index=True)
 
     def _generate(self):
-        exceptions = self.search([])
-        if exceptions:
+        if exceptions := self.search([]):
             return 'suppress_upgrade_warnings=%s' % (','.join(exceptions.mapped('elements'))).replace(' ', '').replace('\n', ',')
         return False
 
@@ -39,26 +38,24 @@ class BuildResult(models.Model):
         exception = []
         for log in ir_logs:
             for upgrade_regex in upgrade_regexes:
-                m = re.search(upgrade_regex.regex, log.message)
-                if m:
-                    exception.append('%s:%s' % (upgrade_regex.prefix, m.groups()[0]))
+                if m := re.search(upgrade_regex.regex, log.message):
+                    exception.append(f'{upgrade_regex.prefix}:{m.groups()[0]}')
 
-        if exception:
-            bundle = False
-            batches = self.top_parent.slot_ids.mapped('batch_id')
-            if batches:
-                bundle = batches[0].bundle_id.id
-            res = {
-                'name': 'Upgrade Exception',
-                'type': 'ir.actions.act_window',
-                'res_model': 'runbot.upgrade.exception',
-                'view_mode': 'form',
-                'context': {
-                    'default_elements': '\n'.join(exception),
-                    'default_bundle_id': bundle,
-                    'default_info': 'Automatically generated from build %s' % self.id
-                }
-            }
-            return res
-        else:
+        if not exception:
             raise UserError('Nothing found here')
+        bundle = (
+            batches[0].bundle_id.id
+            if (batches := self.top_parent.slot_ids.mapped('batch_id'))
+            else False
+        )
+        return {
+            'name': 'Upgrade Exception',
+            'type': 'ir.actions.act_window',
+            'res_model': 'runbot.upgrade.exception',
+            'view_mode': 'form',
+            'context': {
+                'default_elements': '\n'.join(exception),
+                'default_bundle_id': bundle,
+                'default_info': f'Automatically generated from build {self.id}',
+            },
+        }

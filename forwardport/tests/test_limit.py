@@ -148,21 +148,27 @@ def test_disable(env, config, make_repo, users, enabled):
         prod.post_status(c, 'success', 'legal/cla')
         prod.post_status(c, 'success', 'ci/runbot')
         pr.post_comment('hansen r+\n%s up to' % bot_name, config['role_reviewer']['token'])
-        pr.post_comment('%s up to b' % bot_name, config['role_reviewer']['token'])
-        pr.post_comment('%s up to foo' % bot_name, config['role_reviewer']['token'])
-        pr.post_comment('%s up to c' % bot_name, config['role_reviewer']['token'])
+        pr.post_comment(f'{bot_name} up to b', config['role_reviewer']['token'])
+        pr.post_comment(f'{bot_name} up to foo', config['role_reviewer']['token'])
+        pr.post_comment(f'{bot_name} up to c', config['role_reviewer']['token'])
     env.run_crons()
 
     # use a set because git webhooks delays might lead to mis-ordered
     # responses and we don't care that much
     assert set(pr.comments) == {
         (users['reviewer'], "hansen r+\n%s up to" % bot_name),
-        (users['reviewer'], "%s up to b" % bot_name),
-        (users['reviewer'], "%s up to foo" % bot_name),
-        (users['reviewer'], "%s up to c" % bot_name),
+        (users['reviewer'], f"{bot_name} up to b"),
+        (users['reviewer'], f"{bot_name} up to foo"),
+        (users['reviewer'], f"{bot_name} up to c"),
         (users['other'], "Please provide a branch to forward-port to."),
-        (users['other'], "Branch 'b' is disabled, it can't be used as a forward port target."),
-        (users['other'], "There is no branch 'foo', it can't be used as a forward port target."),
+        (
+            users['other'],
+            "Branch 'b' is disabled, it can't be used as a forward port target.",
+        ),
+        (
+            users['other'],
+            "There is no branch 'foo', it can't be used as a forward port target.",
+        ),
         (users['other'], "Forward-porting to 'c'."),
         seen(env, pr, users),
     }
@@ -237,8 +243,8 @@ def test_limit_after_merge(env, config, make_repo, users):
     assert p1.limit_id == p2.limit_id == branch_c, "check that limit is correctly set"
     pr2 = prod.get_pr(p2.number)
     with prod:
-        pr1.post_comment(bot_name + ' up to b', reviewer)
-        pr2.post_comment(bot_name + ' up to b', reviewer)
+        pr1.post_comment(f'{bot_name} up to b', reviewer)
+        pr2.post_comment(f'{bot_name} up to b', reviewer)
     env.run_crons()
 
     assert p1.limit_id == p2.limit_id == branch_c, \
@@ -246,20 +252,25 @@ def test_limit_after_merge(env, config, make_repo, users):
     assert pr1.comments == [
         (users['reviewer'], "hansen r+"),
         seen(env, pr1, users),
-        (users['reviewer'], bot_name + ' up to b'),
-        (bot_name, "Sorry, forward-port limit can only be set before the PR is merged."),
+        (users['reviewer'], f'{bot_name} up to b'),
+        (
+            bot_name,
+            "Sorry, forward-port limit can only be set before the PR is merged.",
+        ),
     ]
     assert pr2.comments == [
         seen(env, pr2, users),
-        (users['user'], """\
-This PR targets b and is part of the forward-port chain. Further PRs will be created up to c.
-
-More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
-"""),
-        (users['reviewer'], bot_name + ' up to b'),
-        (bot_name, "Sorry, forward-port limit can only be set on an origin PR"
-                   " (%s here) before it's merged and forward-ported." % p1.display_name
-         ),
+        (
+            users['user'],
+            """\ #This PR targets b and is part of the forward-port chain. Further PRs will be created up to c. # #More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port #""",
+        ),
+        (users['reviewer'], f'{bot_name} up to b'),
+        (
+            bot_name,
+            "Sorry, forward-port limit can only be set on an origin PR"
+            " (%s here) before it's merged and forward-ported."
+            % p1.display_name,
+        ),
     ]
 
     # update pr2 to detach it from pr1
@@ -275,14 +286,19 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     assert p2.source_id == p1
 
     with prod:
-        pr2.post_comment(bot_name + ' up to b', reviewer)
+        pr2.post_comment(f'{bot_name} up to b', reviewer)
     env.run_crons()
 
     assert pr2.comments[4:] == [
-        (bot_name, "This PR was modified / updated and has become a normal PR. "
-                   "It should be merged the normal way (via @hansen)"),
-        (users['reviewer'], bot_name + ' up to b'),
-        (bot_name, "Sorry, forward-port limit can only be set on an origin PR "
-                   f"({p1.display_name} here) before it's merged and forward-ported."
-         ),
+        (
+            bot_name,
+            "This PR was modified / updated and has become a normal PR. "
+            "It should be merged the normal way (via @hansen)",
+        ),
+        (users['reviewer'], f'{bot_name} up to b'),
+        (
+            bot_name,
+            "Sorry, forward-port limit can only be set on an origin PR "
+            f"({p1.display_name} here) before it's merged and forward-ported.",
+        ),
     ]

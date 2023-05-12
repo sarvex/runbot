@@ -95,7 +95,7 @@ class Bundle(models.Model):
             master_base = False
             fallback = False
             for bid, bname in self._get_base_ids(project_id):
-                if bundle.name.startswith('%s-' % bname):
+                if bundle.name.startswith(f'{bname}-'):
                     bundle.base_id = self.browse(bid)
                     break
                 elif bname == 'master':
@@ -186,7 +186,7 @@ class Bundle(models.Model):
 
     def _url(self):
         self.ensure_one()
-        return "/runbot/bundle/%s" % self.id
+        return f"/runbot/bundle/{self.id}"
 
 
     def create(self, values_list):
@@ -219,7 +219,12 @@ class Bundle(models.Model):
 
     def consistency_warning(self):
         if self.defined_base_id:
-            return [('info', 'This bundle has a forced base: %s' % self.defined_base_id.name)]
+            return [
+                (
+                    'info',
+                    f'This bundle has a forced base: {self.defined_base_id.name}',
+                )
+            ]
         warnings = []
         if not self.base_id:
             warnings.append(('warning', 'No base defined on this bundle'))
@@ -227,11 +232,26 @@ class Bundle(models.Model):
             for branch in self.branch_ids:
                 if branch.is_pr and branch.target_branch_name != self.base_id.name:
                     if branch.target_branch_name.startswith(self.base_id.name):
-                        warnings.append(('info', 'PR %s targeting a non base branch: %s' % (branch.dname, branch.target_branch_name)))
+                        warnings.append(
+                            (
+                                'info',
+                                f'PR {branch.dname} targeting a non base branch: {branch.target_branch_name}',
+                            )
+                        )
                     else:
-                        warnings.append(('warning' if branch.alive else 'info', 'PR %s targeting wrong version: %s (expecting %s)' % (branch.dname, branch.target_branch_name, self.base_id.name)))
+                        warnings.append(
+                            (
+                                'warning' if branch.alive else 'info',
+                                f'PR {branch.dname} targeting wrong version: {branch.target_branch_name} (expecting {self.base_id.name})',
+                            )
+                        )
                 elif not branch.is_pr and not branch.name.startswith(self.base_id.name) and not self.defined_base_id:
-                    warnings.append(('warning', 'Branch %s not starting with version name (%s)' % (branch.dname, self.base_id.name)))
+                    warnings.append(
+                        (
+                            'warning',
+                            f'Branch {branch.dname} not starting with version name ({self.base_id.name})',
+                        )
+                    )
         return warnings
 
     def branch_groups(self):

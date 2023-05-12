@@ -46,7 +46,7 @@ def list_local_dbs():
 def _local_pg_rename_db(dbname, new_db_name):
     with local_pgadmin_cursor() as local_cr:
         pid_col = 'pid' if local_cr.connection.server_version >= 90200 else 'procpid'
-        query = 'SELECT pg_terminate_backend({}) FROM pg_stat_activity WHERE datname=%s'.format(pid_col)
+        query = f'SELECT pg_terminate_backend({pid_col}) FROM pg_stat_activity WHERE datname=%s'
         local_cr.execute(query, [dbname])
         local_cr.execute("ALTER DATABASE \"%s\" RENAME TO \"%s\";" % (dbname, new_db_name))
 
@@ -103,12 +103,12 @@ class RunbotClient():
             total_db += 1
 
         nb_matching = 0
-        ids = [int(i) for i in db_names.keys()]
+        ids = [int(i) for i in db_names]
         builds = self.env['runbot.build'].search([('id', 'in', ids)])
         for build in builds:
             for suffix in db_names[str(build.id)].keys():
                 origin_name = db_names[str(build.id)][suffix]
-                dest_name = "%s-%s" % (build.dest, suffix)
+                dest_name = f"{build.dest}-{suffix}"
                 nb_matching += 1
                 _logger.info('Renaming database "%s" --> "%s"', origin_name, dest_name)
                 if args.dry_run:

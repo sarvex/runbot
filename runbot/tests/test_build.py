@@ -14,8 +14,7 @@ def rev_parse(repo, branch_name):
     'rp_odoo-dev/enterprise_saas-12.2__head'
     should be overwitten if a pr head should match a branch head
     """
-    head_hash = 'rp_%s_%s_head' % (repo.name.split(':')[1], branch_name.split('/')[-1])
-    return head_hash
+    return f"rp_{repo.name.split(':')[1]}_{branch_name.split('/')[-1]}_head"
 
 
 class TestBuildParams(RunbotCaseMinimalSetup):
@@ -237,7 +236,7 @@ class TestBuildResult(RunbotCase):
             'params_id': self.server_params.id,
         })
         cmd = build._cmd(py_version=3)
-        self.assertIn('log_db = %s' % uri, cmd.get_config())
+        self.assertIn(f'log_db = {uri}', cmd.get_config())
 
     def test_build_cmd_server_path_no_dep(self):
         """ test that the server path and addons path """
@@ -262,9 +261,10 @@ class TestBuildResult(RunbotCase):
                 '/tmp/runbot_test/static/sources/server/dfdfcfcf0000ffffffffffffffffffffffffffff/server.py',
                 '/tmp/runbot_test/static/sources/server/dfdfcfcf0000ffffffffffffffffffffffffffff/openerp/tools/config.py'
             ])
-            if file == '/tmp/runbot_test/static/sources/addons/d0d0caca0000ffffffffffffffffffffffffffff/requirements.txt':
-                return False
-            return True
+            return (
+                file
+                != '/tmp/runbot_test/static/sources/addons/d0d0caca0000ffffffffffffffffffffffffffff/requirements.txt'
+            )
 
         def is_dir(file):
             paths = [
@@ -272,7 +272,7 @@ class TestBuildResult(RunbotCase):
                 'sources/server/dfdfcfcf0000ffffffffffffffffffffffffffff/core/addons',
                 'sources/addons/d0d0caca0000ffffffffffffffffffffffffffff'
             ]
-            self.assertTrue(any([path in file for path in paths]))  # checking that addons path existence check looks ok
+            self.assertTrue(any(path in file for path in paths))
             return True
 
         self.patchers['isfile'].side_effect = is_file
@@ -317,7 +317,7 @@ class TestBuildResult(RunbotCase):
         self.stop_patcher('_local_cleanup_patcher')
         self.start_patcher('build_local_pgadmin_cursor_patcher', 'odoo.addons.runbot.models.build.local_pgadmin_cursor')
         self.start_patcher('build_os_listdirr_patcher', 'odoo.addons.runbot.models.build.os.listdir')
-        dbname = '%s-foobar' % build.dest
+        dbname = f'{build.dest}-foobar'
         self.start_patcher('list_local_dbs_patcher', 'odoo.addons.runbot.models.build.list_local_dbs', return_value=[dbname])
 
         build._local_cleanup()

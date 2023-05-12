@@ -27,10 +27,12 @@ class Dockerfile(models.Model):
 
     @api.returns('self', lambda value: value.id)
     def copy(self, default=None):
-        copied_record = super().copy(default={'name': '%s (copy)' % self.name, 'to_build': False})
+        copied_record = super().copy(
+            default={'name': f'{self.name} (copy)', 'to_build': False}
+        )
         copied_record.template_id = self.template_id.copy()
-        copied_record.template_id.name = '%s (copy)' % copied_record.template_id.name
-        copied_record.template_id.key = '%s (copy)' % copied_record.template_id.key
+        copied_record.template_id.name = f'{copied_record.template_id.name} (copy)'
+        copied_record.template_id.key = f'{copied_record.template_id.key} (copy)'
         return copied_record
 
     @api.depends('template_id.arch_base')

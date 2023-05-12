@@ -38,14 +38,16 @@ def _check_scopes(config):
         if required_scopes is None:
             continue
 
-        response = requests.get('https://api.github.com/rate_limit', headers={
-            'Authorization': 'token %s' % vals['token']
-        })
+        response = requests.get(
+            'https://api.github.com/rate_limit',
+            headers={'Authorization': f"token {vals['token']}"},
+        )
         assert response.status_code == 200
         x_oauth_scopes = response.headers['X-OAuth-Scopes']
         token_scopes = set(re.split(r',\s+', x_oauth_scopes))
-        assert token_scopes >= required_scopes, \
-            "%s should have scopes %s, found %s" % (section, token_scopes, required_scopes)
+        assert (
+            token_scopes >= required_scopes
+        ), f"{section} should have scopes {token_scopes}, found {required_scopes}"
 
 @pytest.fixture(autouse=True)
 def _cleanup_cache(config, users):

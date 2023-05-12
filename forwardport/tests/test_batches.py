@@ -50,8 +50,8 @@ def test_single_updated(env, config, make_repo):
         repo.make_commits(
             pr21_id.target.name,
             Commit('Whops', tree={'2': '1'}),
-            ref='heads/' + ref,
-            make=False
+            ref=f'heads/{ref}',
+            make=False,
         )
     env.run_crons()
 

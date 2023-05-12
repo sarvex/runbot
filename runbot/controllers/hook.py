@@ -17,8 +17,7 @@ class Hook(http.Controller):
         event = request.httprequest.headers.get("X-Github-Event")
         payload = json.loads(request.params.get('payload', '{}'))
         if remote_id is None:
-            repo_data = payload.get('repository')
-            if repo_data:
+            if repo_data := payload.get('repository'):
                 remote_domain = [
                     '|', '|', '|',
                     ('name', '=', repo_data['ssh_url']),

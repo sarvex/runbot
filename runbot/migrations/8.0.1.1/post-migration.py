@@ -6,7 +6,7 @@ from openerp.modules.registry import RegistryManager
 
 
 def get_legacy_name(original_name, version):
-    return 'legacy_%s_%s' % (version.replace('.', '_'), original_name)
+    return f"legacy_{version.replace('.', '_')}_{original_name}"
 
 
 def m2o_to_x2m(cr, model, table, field, source_field):

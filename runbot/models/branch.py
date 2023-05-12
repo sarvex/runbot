@@ -40,7 +40,7 @@ class Branch(models.Model):
     @api.depends('name', 'remote_id.short_name')
     def _compute_dname(self):
         for branch in self:
-            branch.dname = '%s:%s' % (branch.remote_id.short_name, branch.name)
+            branch.dname = f'{branch.remote_id.short_name}:{branch.name}'
 
     def _search_dname(self, operator, value):
         if ':' not in value:
@@ -60,12 +60,7 @@ class Branch(models.Model):
         for branch in self:
             if branch.is_pr:
                 _, name = branch.pull_head_name.split(':')
-                if branch.pull_head_remote_id:
-                    reference_name = name
-                else:
-                    reference_name = branch.pull_head_name  # repo is not known, not in repo list must be an external pr, so use complete label
-                    #if ':patch-' in branch.pull_head_name:
-                    #    branch.reference_name = '%s~%s' % (branch.pull_head_name, branch.name)
+                reference_name = name if branch.pull_head_remote_id else branch.pull_head_name
             else:
                 reference_name = branch.name
             forced_version = branch.remote_id.repo_id.single_version  # we don't add a depend on repo.single_version to avoid mass recompute of existing branches
@@ -85,7 +80,7 @@ class Branch(models.Model):
                 pr_per_remote[pr.remote_id].append(pr)
             for remote, prs in pr_per_remote.items():
                 _logger.info('Getting info in %s for %s pr using page scan', remote.name, len(prs))
-                pr_names = set([pr.name for pr in prs])
+                pr_names = {pr.name for pr in prs}
                 count = 0
                 for result in remote._github('/repos/:owner/:repo/pulls?state=all&sort=updated&direction=desc', ignore_errors=True, recursive=True):
                     for info in result:
@@ -104,8 +99,11 @@ class Branch(models.Model):
             branch.pull_head_name = False
             branch.pull_head_remote_id = False
             if branch.name:
-                pi = branch.is_pr and (pull_info or pull_info_dict.get((branch.remote_id, branch.name)) or branch._get_pull_info())
-                if pi:
+                if pi := branch.is_pr and (
+                    pull_info
+                    or pull_info_dict.get((branch.remote_id, branch.name))
+                    or branch._get_pull_info()
+                ):
                     try:
                         branch.draft = pi.get('draft', False)
                         branch.alive = pi.get('state', False) != 'closed'
@@ -128,9 +126,9 @@ class Branch(models.Model):
         for branch in self:
             if branch.name:
                 if branch.is_pr:
-                    branch.branch_url = "https://%s/pull/%s" % (branch.remote_id.base_url, branch.name)
+                    branch.branch_url = f"https://{branch.remote_id.base_url}/pull/{branch.name}"
                 else:
-                    branch.branch_url = "https://%s/tree/%s" % (branch.remote_id.base_url, branch.name)
+                    branch.branch_url = f"https://{branch.remote_id.base_url}/tree/{branch.name}"
             else:
                 branch.branch_url = ''
 
@@ -163,12 +161,13 @@ class Branch(models.Model):
                     values['is_base'] = True
 
                 if branch.is_pr and branch.target_branch_name:  # most likely external_pr, use target as version
-                    base = self.env['runbot.bundle'].search([
-                        ('name', '=', branch.target_branch_name),
-                        ('is_base', '=', True),
-                        ('project_id', '=', project.id)
-                    ])
-                    if base:
+                    if base := self.env['runbot.bundle'].search(
+                        [
+                            ('name', '=', branch.target_branch_name),
+                            ('is_base', '=', True),
+                            ('project_id', '=', project.id),
+                        ]
+                    ):
                         values['defined_base_id'] = base.id
                 if name:
                     bundle = self.env['runbot.bundle'].create(values)  # this prevent creating a branch in UI
@@ -191,18 +190,19 @@ class Branch(models.Model):
 
     def _get_pull_info(self):
         self.ensure_one()
-        remote = self.remote_id
         if self.is_pr:
             _logger.info('Getting info for %s', self.name)
-            return remote._github('/repos/:owner/:repo/pulls/%s' % self.name, ignore_errors=False) or {}  # TODO catch and send a managable exception
+            remote = self.remote_id
+            return (
+                remote._github(
+                    f'/repos/:owner/:repo/pulls/{self.name}', ignore_errors=False
+                )
+                or {}
+            )
         return {}
 
     def ref(self):
-        return 'refs/%s/%s/%s' % (
-            self.remote_id.remote_name,
-            'pull' if self.is_pr else 'heads',
-            self.name
-        )
+        return f"refs/{self.remote_id.remote_name}/{'pull' if self.is_pr else 'heads'}/{self.name}"
 
     def recompute_infos(self, payload=None):
         """ public method to recompute infos on demand """
@@ -234,8 +234,7 @@ class Branch(models.Model):
         if not name:
             return False
         icp = self.env['ir.config_parameter'].sudo()
-        regex = icp.get_param('runbot.runbot_is_base_regex', False)
-        if regex:
+        if regex := icp.get_param('runbot.runbot_is_base_regex', False):
             return re.match(regex, name)
 
 

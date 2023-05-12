@@ -14,7 +14,7 @@ def migrate(cr, version):
             install_modules_list.remove('*')
             install_modules = ', '.join(install_modules_list)
         elif install_modules_list:
-            install_modules = '-*,%s' % install_modules
+            install_modules = f'-*,{install_modules}'
         else:
             install_modules = '-*'
         cr.execute("UPDATE runbot_build_config_step SET install_modules = %s WHERE id=%s", (install_modules, step_id))

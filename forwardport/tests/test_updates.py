@@ -93,8 +93,8 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         [new_c] = pr_repo.make_commits(
             pr1_id.target.name,
             Commit('whop whop', tree={'x': '5'}),
-            ref='heads/%s' % pr_ref,
-            make=False
+            ref=f'heads/{pr_ref}',
+            make=False,
         )
     env.run_crons()
 
@@ -102,8 +102,13 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     assert not pr1_id.parent_id, "the FP PR should be detached from the original"
     assert pr1_remote.comments == [
         seen(env, pr1_remote, users),
-        fp_intermediate, ci_warning, ci_warning,
-        (users['user'], "This PR was modified / updated and has become a normal PR. It should be merged the normal way (via @%s)" % pr1_id.repository.project_id.github_prefix),
+        fp_intermediate,
+        ci_warning,
+        ci_warning,
+        (
+            users['user'],
+            f"This PR was modified / updated and has become a normal PR. It should be merged the normal way (via @{pr1_id.repository.project_id.github_prefix})",
+        ),
     ], "users should be warned that the PR has become non-FP"
     # NOTE: should the followup PR wait for pr1 CI or not?
     assert pr2_id.head != pr2_head
@@ -192,8 +197,8 @@ def test_update_merged(env, make_repo, config, users):
         repo.make_commits(
             pr1_id.target.name,
             Commit('2', tree={'0': '0', '1': '1'}),
-            ref='heads/%s' % ref,
-            make=False
+            ref=f'heads/{ref}',
+            make=False,
         )
     updates = env['forwardport.updates'].search([])
     assert updates

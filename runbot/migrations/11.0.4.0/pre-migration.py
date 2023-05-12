@@ -3,13 +3,18 @@
 
 def migrate(cr, version):
     # delete oldies
-    old_models = tuple([
-        'ir.qweb.widget', 'ir.qweb.widget.monetary', 'base.module.import',
-        'res.currency.rate.type', 'website.converter.test.sub',
-        'website.converter.test', 'runbot.config.settings',
-        'report.abstract_report',  'base.action.rule.lead.test',
-        'base.action.rule.line.test'
-    ])
+    old_models = (
+        'ir.qweb.widget',
+        'ir.qweb.widget.monetary',
+        'base.module.import',
+        'res.currency.rate.type',
+        'website.converter.test.sub',
+        'website.converter.test',
+        'runbot.config.settings',
+        'report.abstract_report',
+        'base.action.rule.lead.test',
+        'base.action.rule.line.test',
+    )
     cr.execute("DELETE FROM ir_model WHERE model IN %s", [old_models])
 
     # pre-create the log_list column

@@ -256,10 +256,11 @@ def migrate(cr, version):
             if key in sha_repo_commits:
                 commit = sha_repo_commits[key]
             else:
-                if duplicate_id and remote_id.repo_id.project_id.id != RD_project.id:
-                    cross_project_duplicate_ids.append(id)
-                elif duplicate_id:
-                    _logger.warning('Problem: duplicate: %s,%s', id, duplicate_id)
+                if duplicate_id:
+                    if remote_id.repo_id.project_id.id != RD_project.id:
+                        cross_project_duplicate_ids.append(id)
+                    else:
+                        _logger.warning('Problem: duplicate: %s,%s', id, duplicate_id)
 
                 commit = env['runbot.commit'].create({
                     'name': name,
@@ -312,6 +313,7 @@ def migrate(cr, version):
             for build_id, dependency_hash, dependecy_repo_id, closest_branch_id, match_type in cr.fetchall():
                 builds_deps[build_id].append((dependency_hash, dependecy_repo_id, closest_branch_id, match_type))
         return builds_deps[bid]
+
     get_deps.start = 0
     get_deps.stop = 0
 
@@ -415,22 +417,27 @@ def migrate(cr, version):
             batch_repos_ids = []
 
             # check if this build can be added to last_batch
-            if bundle.last_batch:
-                if create_date - bundle.last_batch.last_update < datetime.timedelta(minutes=5):
-                    if duplicate_id and build_id in bundle.last_batch.slot_ids.mapped('build_id').ids:
-                        continue
+            if (
+                bundle.last_batch
+                and create_date - bundle.last_batch.last_update
+                < datetime.timedelta(minutes=5)
+            ):
+                if duplicate_id and build_id in bundle.last_batch.slot_ids.mapped('build_id').ids:
+                    continue
 
-                    # to fix: nightly will be in the same batch of the previous normal one. If config_id is diffrent, create batch?
-                    # possible fix: max create_date diff
-                    batch = bundle.last_batch
-                    batch_commits = batch.commit_ids
-                    batch_repos_ids = batch_commits.mapped('repo_id').ids
-                    for commit in batch_commits:
-                        if commit.repo_id.id in build_commits:
-                            if commit.id != build_commits[commit.repo_id.id]:
-                                batch = False
-                                batch_repos_ids = []
-                                break
+                # to fix: nightly will be in the same batch of the previous normal one. If config_id is diffrent, create batch?
+                # possible fix: max create_date diff
+                batch = bundle.last_batch
+                batch_commits = batch.commit_ids
+                batch_repos_ids = batch_commits.mapped('repo_id').ids
+                for commit in batch_commits:
+                    if (
+                        commit.repo_id.id in build_commits
+                        and commit.id != build_commits[commit.repo_id.id]
+                    ):
+                        batch = False
+                        batch_repos_ids = []
+                        break
 
             missing_commits = [commit_id for repo_id, commit_id in build_commits.items() if repo_id not in batch_repos_ids]
 

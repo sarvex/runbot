@@ -6,7 +6,7 @@ class TestIrLogging(RunbotCase):
 
     def simulate_log(self, build, func, message, level='INFO'):
         """ simulate ir_logging from an external build """
-        dest = '%s-fake-dest' % build.id
+        dest = f'{build.id}-fake-dest'
         val = ('server', dest, 'test', level, message, 'test', '0', func)
         self.cr.execute("""
                 INSERT INTO ir_logging(create_date, type, dbname, name, level, message, path, line, func)
@@ -42,7 +42,7 @@ class TestIrLogging(RunbotCase):
         build.log_counter = 10
 
         # Test the log limit
-        for i in range(11):
+        for _ in range(11):
             self.simulate_log(build, 'limit function', 'limit message')
         log_lines = self.env['ir.logging'].search([('build_id', '=', build.id), ('type', '=', 'server'), ('func', '=', 'limit function'), ('message', '=', 'limit message'), ('level', '=', 'INFO')])
         self.assertGreater(len(log_lines), 7, 'Trigger should have created logs with appropriate build id')

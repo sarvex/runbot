@@ -159,9 +159,36 @@ class TestBuildConfigStep(RunbotCase):
         def docker_run(cmd, log_path, *args, **kwargs):
             dest = self.parent_build.dest
             self.assertEqual(cmd.cmd[:2], ['python3', 'server/server.py'])
-            self.assertEqual(cmd.finals[0], ['pg_dump', '%s-all' % dest, '>', '/data/build/logs/%s-all//dump.sql' % dest])
-            self.assertEqual(cmd.finals[1], ['cp', '-r', '/data/build/datadir/filestore/%s-all' % dest, '/data/build/logs/%s-all//filestore/' % dest])
-            self.assertEqual(cmd.finals[2], ['cd', '/data/build/logs/%s-all/' % dest, '&&', 'zip', '-rmq9', '/data/build/logs/%s-all.zip' % dest, '*'])
+            self.assertEqual(
+                cmd.finals[0],
+                [
+                    'pg_dump',
+                    f'{dest}-all',
+                    '>',
+                    f'/data/build/logs/{dest}-all//dump.sql',
+                ],
+            )
+            self.assertEqual(
+                cmd.finals[1],
+                [
+                    'cp',
+                    '-r',
+                    f'/data/build/datadir/filestore/{dest}-all',
+                    f'/data/build/logs/{dest}-all//filestore/',
+                ],
+            )
+            self.assertEqual(
+                cmd.finals[2],
+                [
+                    'cd',
+                    f'/data/build/logs/{dest}-all/',
+                    '&&',
+                    'zip',
+                    '-rmq9',
+                    f'/data/build/logs/{dest}-all.zip',
+                    '*',
+                ],
+            )
             self.assertEqual(log_path, 'dev/null/logpath')
 
         self.patchers['docker_run'].side_effect = docker_run
@@ -316,7 +343,7 @@ Initiating shutdown
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'ok'})
-        self.assertEqual(logs, [('INFO', 'Getting results for build %s' % build.dest)])
+        self.assertEqual(logs, [('INFO', f'Getting results for build {build.dest}')])
         # no shutdown
         logs = []
         file_content = """
@@ -327,10 +354,16 @@ Some post install stuff
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'ko'})
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest),
-            ('ERROR', 'No "Initiating shutdown" found in logs, maybe because of cpu limit.')
-        ])
+        self.assertEqual(
+            logs,
+            [
+                ('INFO', f'Getting results for build {build.dest}'),
+                (
+                    'ERROR',
+                    'No "Initiating shutdown" found in logs, maybe because of cpu limit.',
+                ),
+            ],
+        )
         # no loaded
         logs = []
         file_content = """
@@ -339,10 +372,13 @@ Loading stuff
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'ko'})
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest),
-            ('ERROR', 'Modules loaded not found in logs')
-        ])
+        self.assertEqual(
+            logs,
+            [
+                ('INFO', f'Getting results for build {build.dest}'),
+                ('ERROR', 'Modules loaded not found in logs'),
+            ],
+        )
 
         # traceback
         logs = []
@@ -359,10 +395,13 @@ Initiating shutdown
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'ko'})
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest),
-            ('ERROR', 'Error or traceback found in logs')
-        ])
+        self.assertEqual(
+            logs,
+            [
+                ('INFO', f'Getting results for build {build.dest}'),
+                ('ERROR', 'Error or traceback found in logs'),
+            ],
+        )
 
         # warning in logs
         logs = []
@@ -376,10 +415,13 @@ Initiating shutdown
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'warn'})
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest),
-            ('WARNING', 'Warning found in logs')
-        ])
+        self.assertEqual(
+            logs,
+            [
+                ('INFO', f'Getting results for build {build.dest}'),
+                ('WARNING', 'Warning found in logs'),
+            ],
+        )
 
         # no log file
         logs = []
@@ -387,10 +429,13 @@ Initiating shutdown
         result = config_step._make_results(build)
 
         self.assertEqual(result, {'local_result': 'ko'})
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest),
-            ('ERROR', 'Log file not found at the end of test job')
-        ])
+        self.assertEqual(
+            logs,
+            [
+                ('INFO', f'Getting results for build {build.dest}'),
+                ('ERROR', 'Log file not found at the end of test job'),
+            ],
+        )
 
         # no error but build was already in warn
         logs = []
@@ -404,9 +449,7 @@ Initiating shutdown
         build.local_result = 'warn'
         with patch('builtins.open', mock_open(read_data=file_content)):
             result = config_step._make_results(build)
-        self.assertEqual(logs, [
-            ('INFO', 'Getting results for build %s' % build.dest)
-        ])
+        self.assertEqual(logs, [('INFO', f'Getting results for build {build.dest}')])
         self.assertEqual(result, {'job_end': '1970-01-01 02:00:00', 'local_result': 'warn'})
 
     @patch('odoo.addons.runbot.models.build_config.ConfigStep._make_tests_results')

@@ -63,20 +63,26 @@ class TestRepo(RunbotCaseMinimalSetup):
             self.assertEqual(url, '/repos/:owner/:repo/pulls/123')
             return {
                 'base': {'ref': 'master'},
-                'head': {'label': 'dev:%s' % branch_name, 'repo': {'full_name': 'dev/server'}},
+                'head': {
+                    'label': f'dev:{branch_name}',
+                    'repo': {'full_name': 'dev/server'},
+                },
             }
 
         repos = self.repo_addons | self.repo_server
 
-        first_commit = [(
-            'refs/%s/heads/%s' % (self.remote_server_dev.remote_name, branch_name),
-            'd0d0caca',
-            datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            'Marc Bidule',
-            '<marc.bidule@somewhere.com>',
-            'Server subject',
-            'Marc Bidule',
-            '<marc.bidule@somewhere.com>')]
+        first_commit = [
+            (
+                f'refs/{self.remote_server_dev.remote_name}/heads/{branch_name}',
+                'd0d0caca',
+                datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+                'Server subject',
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+            )
+        ]
 
         self.commit_list[self.repo_server.id] = first_commit
 
@@ -97,14 +103,18 @@ class TestRepo(RunbotCaseMinimalSetup):
         last_batch = batch
 
         # create a addons branch in the same bundle
-        self.commit_list[self.repo_addons.id] = [('refs/%s/heads/%s' % (self.remote_addons_dev.remote_name, branch_name),
-                                                  'deadbeef',
-                                                  datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-                                                  'Marc Bidule',
-                                                  '<marc.bidule@somewhere.com>',
-                                                  'Addons subject',
-                                                  'Marc Bidule',
-                                                  '<marc.bidule@somewhere.com>')]
+        self.commit_list[self.repo_addons.id] = [
+            (
+                f'refs/{self.remote_addons_dev.remote_name}/heads/{branch_name}',
+                'deadbeef',
+                datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+                'Addons subject',
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+            )
+        ]
 
         repos._update_batches()
 
@@ -125,14 +135,17 @@ class TestRepo(RunbotCaseMinimalSetup):
 
         # create a server pr in the same bundle with the same hash
         self.commit_list[self.repo_server.id] += [
-            ('refs/%s/pull/123' % self.remote_server.remote_name,
-             'd0d0caca',
-             datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-             'Marc Bidule',
-             '<marc.bidule@somewhere.com>',
-             'Another subject',
-             'Marc Bidule',
-             '<marc.bidule@somewhere.com>')]
+            (
+                f'refs/{self.remote_server.remote_name}/pull/123',
+                'd0d0caca',
+                datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+                'Another subject',
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+            )
+        ]
 
         # Create Batches
         repos._update_batches()
@@ -155,25 +168,26 @@ class TestRepo(RunbotCaseMinimalSetup):
         # A new commit is found in the server repo
         self.commit_list[self.repo_server.id] = [
             (
-                'refs/%s/heads/%s' % (self.remote_server_dev.remote_name, branch_name),
+                f'refs/{self.remote_server_dev.remote_name}/heads/{branch_name}',
                 'b00b',
                 datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
                 'Marc Bidule',
                 '<marc.bidule@somewhere.com>',
                 'A new subject',
                 'Marc Bidule',
-                '<marc.bidule@somewhere.com>'
+                '<marc.bidule@somewhere.com>',
             ),
             (
-                'refs/%s/pull/123' % self.remote_server.remote_name,
+                f'refs/{self.remote_server.remote_name}/pull/123',
                 'b00b',
                 datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
                 'Marc Bidule',
                 '<marc.bidule@somewhere.com>',
                 'A new subject',
                 'Marc Bidule',
-                '<marc.bidule@somewhere.com>'
-            )]
+                '<marc.bidule@somewhere.com>',
+            ),
+        ]
 
         # Create Batches
         repos._update_batches()
@@ -205,14 +219,17 @@ class TestRepo(RunbotCaseMinimalSetup):
         self.assertEqual(len(batch), 1, 'No new batch created, no head change')
 
         self.commit_list[self.repo_server.id] = [
-            ('refs/%s/heads/%s' % (self.remote_server_dev.remote_name, branch_name),
-             'dead1234',
-             datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-             'Marc Bidule',
-             '<marc.bidule@somewhere.com>',
-             'A last subject',
-             'Marc Bidule',
-             '<marc.bidule@somewhere.com>')]
+            (
+                f'refs/{self.remote_server_dev.remote_name}/heads/{branch_name}',
+                'dead1234',
+                datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+                'A last subject',
+                'Marc Bidule',
+                '<marc.bidule@somewhere.com>',
+            )
+        ]
 
         repos._update_batches()
 
@@ -260,14 +277,18 @@ class TestRepo(RunbotCaseMinimalSetup):
         self.env['runbot.build'].search([], limit=5).write({'name': 'jflsdjflj'})
 
         for i in range(20005):
-            self.commit_list[self.repo_server.id].append(['refs/heads/bidon-%05d' % i,
-                                                          'd0d0caca %s' % i,
-                                                          datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-                                                          'Marc Bidule',
-                                                          '<marc.bidule@somewhere.com>',
-                                                          'A nice subject',
-                                                          'Marc Bidule',
-                                                          '<marc.bidule@somewhere.com>'])
+            self.commit_list[self.repo_server.id].append(
+                [
+                    'refs/heads/bidon-%05d' % i,
+                    f'd0d0caca {i}',
+                    datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                    'Marc Bidule',
+                    '<marc.bidule@somewhere.com>',
+                    'A nice subject',
+                    'Marc Bidule',
+                    '<marc.bidule@somewhere.com>',
+                ]
+            )
         inserted_time = time.time()
         _logger.info('Insert took: %ssec', (inserted_time - start_time))
         repo._update_batches()
@@ -397,7 +418,10 @@ class TestIdentityFile(RunbotCase):
             def mock_check_output(cmd, *args, **kwargs):
                 expected_option = '-c core.sshCommand=ssh -i \/.+\/\.ssh\/fake_identity'
                 git_cmd = ' '.join(cmd)
-                self.assertTrue(re.search(expected_option, git_cmd), '%s did not match %s' % (git_cmd, expected_option))
+                self.assertTrue(
+                    re.search(expected_option, git_cmd),
+                    f'{git_cmd} did not match {expected_option}',
+                )
                 return Mock()
 
             return mock_check_output

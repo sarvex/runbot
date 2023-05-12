@@ -15,7 +15,7 @@ class RunbotCase(TransactionCase):
         """Helper that returns a mock for repo._git()"""
         def mock_git(repo, cmd):
             if cmd[:2] == ['show', '-s'] or cmd[:3] == ['show', '--pretty="%H -- %s"', '-s']:
-                return 'commit message for %s' % cmd[-1]
+                return f'commit message for {cmd[-1]}'
             if cmd[:2] == ['cat-file', '-e']:
                 return True
             if cmd[0] == 'for-each-ref':
@@ -24,25 +24,29 @@ class RunbotCase(TransactionCase):
                 else:
                     return ''
             else:
-                _logger.warning('Unsupported mock command %s' % cmd)
+                _logger.warning(f'Unsupported mock command {cmd}')
+
         return mock_git
 
     def push_commit(self, remote, branch_name, subject, sha=None, tstamp=None, committer=None, author=None):
         """Helper to simulate a commit pushed"""
 
         committer = committer or "Marc Bidule"
-        commiter_email = '%s@somewhere.com' % committer.lower().replace(' ', '_')
+        commiter_email = f"{committer.lower().replace(' ', '_')}@somewhere.com"
         author = author or committer
-        author_email = '%s@somewhere.com' % author.lower().replace(' ', '_')
-        self.commit_list[self.repo_server.id] = [(
-            'refs/%s/heads/%s' % (remote.remote_name, branch_name),
-            sha or 'd0d0caca',
-            tstamp or datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
-            committer,
-            commiter_email,
-            subject,
-            author,
-            author_email)]
+        author_email = f"{author.lower().replace(' ', '_')}@somewhere.com"
+        self.commit_list[self.repo_server.id] = [
+            (
+                f'refs/{remote.remote_name}/heads/{branch_name}',
+                sha or 'd0d0caca',
+                tstamp or datetime.datetime.now().strftime("%Y-%m-%d, %H:%M:%S"),
+                committer,
+                commiter_email,
+                subject,
+                author,
+                author_email,
+            )
+        ]
 
     def setUp(self):
         super().setUp()

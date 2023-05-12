@@ -33,18 +33,18 @@ class FreezeWizard(models.Model):
     @api.depends('release_pr_ids.pr_id.label', 'required_pr_ids.state')
     def _compute_errors(self):
         errors = []
-        without = self.release_pr_ids.filtered(lambda p: not p.pr_id)
-        if without:
-            errors.append("* Every repository must have a release PR, missing release PRs for %s." % ', '.join(
-                p.repository_id.name for p in without
-            ))
+        if without := self.release_pr_ids.filtered(lambda p: not p.pr_id):
+            errors.append(
+                f"* Every repository must have a release PR, missing release PRs for {', '.join(p.repository_id.name for p in without)}."
+            )
 
         labels = set(self.mapped('release_pr_ids.pr_id.label'))
         if len(labels) != 1:
             errors.append("* All release PRs must have the same label, found %r." % ', '.join(sorted(labels)))
 
-        unready = sum(p.state not in ('closed', 'merged') for p in self.required_pr_ids)
-        if unready:
+        if unready := sum(
+            p.state not in ('closed', 'merged') for p in self.required_pr_ids
+        ):
             errors.append(f"* {unready} required PRs not ready.")
 
         self.errors = '\n'.join(errors) or False
@@ -86,8 +86,7 @@ class FreezeWizard(models.Model):
                 'sequence': next(seq),
             })
         ]
-        for s, b in zip(seq, rest):
-            commands.append((1, b.id, {'sequence': s}))
+        commands.extend((1, b.id, {'sequence': s}) for s, b in zip(seq, rest))
         project_id.branch_ids = commands
 
         # update release PRs to get merged on the newly created branch
@@ -106,10 +105,15 @@ class FreezeWizard(models.Model):
             if not prev.ok:
                 errors.append(f"Unable to resolve branch {master.name} of repository {repository.name} to a commit.")
                 break
-            new_branch = gh('POST', 'git/refs', json={
-                'ref': 'refs/heads/' + self.branch_name,
-                'sha': prev.json()['object']['sha'],
-            }, check=False)
+            new_branch = gh(
+                'POST',
+                'git/refs',
+                json={
+                    'ref': f'refs/heads/{self.branch_name}',
+                    'sha': prev.json()['object']['sha'],
+                },
+                check=False,
+            )
             if not new_branch.ok:
                 err = new_branch.json()['message']
                 errors.append(f"Unable to create branch {master.name} of repository {repository.name}: {err}.")

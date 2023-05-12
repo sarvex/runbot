@@ -102,8 +102,11 @@ def test_straightforward_flow(env, config, make_repo, users):
     assert pr1.parent_id == pr0
     assert pr1.source_id == pr0
     other_owner = other.name.split('/')[0]
-    assert re.match(other_owner + ':' + REF_PATTERN.format(target='b', source='hugechange'), pr1.label), \
-        "check that FP PR was created in FP target repo"
+    assert re.match(
+        f'{other_owner}:'
+        + REF_PATTERN.format(target='b', source='hugechange'),
+        pr1.label,
+    ), "check that FP PR was created in FP target repo"
     c = prod.commit(pr1.head)
     # TODO: add original committer (if !author) as co-author in commit message?
     assert c.author['name'] == other_user['user'], "author should still be original's probably"
@@ -166,7 +169,9 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         prod.post_status(pr2.head, 'success', 'ci/runbot')
         prod.post_status(pr2.head, 'success', 'legal/cla')
 
-        pr2_remote.post_comment('%s r+' % project.fp_github_name, config['role_reviewer']['token'])
+        pr2_remote.post_comment(
+            f'{project.fp_github_name} r+', config['role_reviewer']['token']
+        )
 
     env.run_crons()
 
@@ -190,7 +195,7 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
         message='p_1',
         repo=prod.name,
         number='%s',
-        headers='X-original-commit: {}\n'.format(p_1_merged.id),
+        headers=f'X-original-commit: {p_1_merged.id}\n',
         name=reviewer_name,
         email=config['role_reviewer']['email'],
     )
@@ -317,8 +322,14 @@ def test_empty(env, config, make_repo, users):
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
-        (users['other'], 'This pull request has forward-port PRs awaiting action (not merged or closed): ' + fail_id.display_name),
-        (users['other'], 'This pull request has forward-port PRs awaiting action (not merged or closed): ' + fail_id.display_name),
+        (
+            users['other'],
+            f'This pull request has forward-port PRs awaiting action (not merged or closed): {fail_id.display_name}',
+        ),
+        (
+            users['other'],
+            f'This pull request has forward-port PRs awaiting action (not merged or closed): {fail_id.display_name}',
+        ),
     ], "each cron run should trigger a new message on the ancestor"
     # check that this stops if we close the PR
     with prod:
@@ -327,8 +338,14 @@ def test_empty(env, config, make_repo, users):
     assert pr1.comments == [
         (users['reviewer'], 'hansen r+'),
         seen(env, pr1, users),
-        (users['other'], 'This pull request has forward-port PRs awaiting action (not merged or closed): ' + fail_id.display_name),
-        (users['other'], 'This pull request has forward-port PRs awaiting action (not merged or closed): ' + fail_id.display_name),
+        (
+            users['other'],
+            f'This pull request has forward-port PRs awaiting action (not merged or closed): {fail_id.display_name}',
+        ),
+        (
+            users['other'],
+            f'This pull request has forward-port PRs awaiting action (not merged or closed): {fail_id.display_name}',
+        ),
     ]
 
 def test_partially_empty(env, config, make_repo):
@@ -441,20 +458,24 @@ def test_access_rights(env, config, make_repo, users, author, reviewer, delegate
         'email': 'other@example.org',
     })
 
-    author_token = config['role_' + author]['token']
+    author_token = config[f'role_{author}']['token']
     fork = prod.fork(token=author_token)
-    with prod, fork:
+    with (prod, fork):
         [c] = fork.make_commits('a', Commit('c_0', tree={'y': '0'}), ref='heads/accessrights')
         pr = prod.make_pr(
-            target='a', title='my change',
-            head=users[author] + ':accessrights',
+            target='a',
+            title='my change',
+            head=f'{users[author]}:accessrights',
             token=author_token,
         )
         prod.post_status(c, 'success', 'legal/cla')
         prod.post_status(c, 'success', 'ci/runbot')
         pr.post_comment('hansen r+', token=config['github']['token'])
         if delegate:
-            pr.post_comment('hansen delegate=%s' % users[delegate], token=config['github']['token'])
+            pr.post_comment(
+                f'hansen delegate={users[delegate]}',
+                token=config['github']['token'],
+            )
     env.run_crons()
 
     with prod:
@@ -474,29 +495,31 @@ def test_access_rights(env, config, make_repo, users, author, reviewer, delegate
         prod.post_status(pr2.head, 'success', 'ci/runbot')
         prod.post_status(pr2.head, 'success', 'legal/cla')
         prod.get_pr(pr2.number).post_comment(
-            '%s r+' % project.fp_github_name,
-            token=config['role_' + reviewer]['token']
+            f'{project.fp_github_name} r+',
+            token=config[f'role_{reviewer}']['token'],
         )
     env.run_crons()
     if success:
-        assert pr1.staging_id and pr2.staging_id,\
-            "%s should have approved FP of PRs by %s" % (reviewer, author)
+        assert (
+            pr1.staging_id and pr2.staging_id
+        ), f"{reviewer} should have approved FP of PRs by {author}"
         st = prod.commit('staging.b')
         # Should be signed-off by both original reviewer and forward port reviewer
         original_signoff = signoff(config['role_user'], st.message)
-        forward_signoff = signoff(config['role_' + reviewer], st.message)
+        forward_signoff = signoff(config[f'role_{reviewer}'], st.message)
         assert st.message.index(original_signoff) <= st.message.index(forward_signoff),\
             "Check that FP approver is after original PR approver as that's " \
             "the review path for the PR"
     else:
-        assert not (pr1.staging_id or pr2.staging_id),\
-            "%s should *not* have approved FP of PRs by %s" % (reviewer, author)
+        assert not (
+            pr1.staging_id or pr2.staging_id
+        ), f"{reviewer} should *not* have approved FP of PRs by {author}"
 def signoff(conf, message):
     for n in filter(None, [conf.get('name'), conf.get('user')]):
-        signoff = 'Signed-off-by: ' + n
+        signoff = f'Signed-off-by: {n}'
         if signoff in message:
             return signoff
-    raise AssertionError("Failed to find signoff by %s in %s" % (conf, message))
+    raise AssertionError(f"Failed to find signoff by {conf} in {message}")
 
 
 def test_delegate_fw(env, config, make_repo, users):
@@ -721,7 +744,9 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # ok main1 PRs
     with main1:
         validate_all([main1], [pr1c.head])
-        main1.get_pr(pr1c.number).post_comment('%s r+' % project.fp_github_name, config['role_reviewer']['token'])
+        main1.get_pr(pr1c.number).post_comment(
+            f'{project.fp_github_name} r+', config['role_reviewer']['token']
+        )
     env.run_crons()
 
     # check that the main1 PRs are ready but blocked on the main2 PRs
@@ -733,7 +758,9 @@ More info at https://github.com/odoo/odoo/wiki/Mergebot#forward-port
     # ok main2 PRs
     with main2:
         validate_all([main2], [pr2c.head])
-        main2.get_pr(pr2c.number).post_comment('%s r+' % project.fp_github_name, config['role_reviewer']['token'])
+        main2.get_pr(pr2c.number).post_comment(
+            f'{project.fp_github_name} r+', config['role_reviewer']['token']
+        )
     env.run_crons()
 
     stb, stc = env['runbot_merge.stagings'].search([], order='target')
@@ -838,12 +865,9 @@ class TestBranchDeletion:
         created in the fp repository
         """
         prod, other = make_basic(env, config, make_repo)
-        with prod, other:
+        with (prod, other):
             [c] = other.make_commits('a', Commit('c', tree={'0': '0'}), ref='heads/abranch')
-            pr = prod.make_pr(
-                target='a', head='%s:abranch' % other.owner,
-                title="a pr",
-            )
+            pr = prod.make_pr(target='a', head=f'{other.owner}:abranch', title="a pr")
             prod.post_status(c, 'success', 'legal/cla')
             prod.post_status(c, 'success', 'ci/runbot')
             pr.post_comment('hansen r+', config['role_reviewer']['token'])
@@ -872,24 +896,24 @@ class TestBranchDeletion:
         than merged) should not get deleted
         """
         prod, other = make_basic(env, config, make_repo)
-        with prod, other:
+        with (prod, other):
             [c] = other.make_commits('a', Commit('c1', tree={'1': '0'}), ref='heads/abranch')
-            pr1 = prod.make_pr(target='a', head='%s:abranch' % other.owner, title='a')
+            pr1 = prod.make_pr(target='a', head=f'{other.owner}:abranch', title='a')
             prod.post_status(c, 'success', 'legal/cla')
             prod.post_status(c, 'success', 'ci/runbot')
             pr1.post_comment('hansen r+', config['role_reviewer']['token'])
 
             other.make_commits('a', Commit('c2', tree={'2': '0'}), ref='heads/bbranch')
-            pr2 = prod.make_pr(target='a', head='%s:bbranch' % other.owner, title='b')
+            pr2 = prod.make_pr(target='a', head=f'{other.owner}:bbranch', title='b')
             pr2.close()
 
             [c] = other.make_commits('a', Commit('c3', tree={'3': '0'}), ref='heads/cbranch')
-            pr3 = prod.make_pr(target='a', head='%s:cbranch' % other.owner, title='c')
+            pr3 = prod.make_pr(target='a', head=f'{other.owner}:cbranch', title='c')
             prod.post_status(c, 'success', 'legal/cla')
             prod.post_status(c, 'success', 'ci/runbot')
 
             other.make_commits('a', Commit('c3', tree={'4': '0'}), ref='heads/dbranch')
-            pr4 = prod.make_pr(target='a', head='%s:dbranch' % other.owner, title='d')
+            pr4 = prod.make_pr(target='a', head=f'{other.owner}:dbranch', title='d')
             pr4.post_comment('hansen r+', config['role_reviewer']['token'])
         env.run_crons()
 
@@ -957,7 +981,7 @@ class TestRecognizeCommands:
         for n in names:
             assert pr_id.limit_id == c
             with repo:
-                pr.post_comment('@%s up to a' % n, config['role_reviewer']['token'])
+                pr.post_comment(f'@{n} up to a', config['role_reviewer']['token'])
             assert pr_id.limit_id == a
             # reset state
             pr_id.write({'limit_id': c.id})
@@ -978,5 +1002,7 @@ class TestRecognizeCommands:
 
         assert pr_id.limit_id == c
         with repo:
-            pr.post_comment('%s@%s up to a' % (indent, botname), config['role_reviewer']['token'])
+            pr.post_comment(
+                f'{indent}@{botname} up to a', config['role_reviewer']['token']
+            )
         assert pr_id.limit_id == a

@@ -7,7 +7,7 @@ logger = logging.getLogger('upgrade')
 
 
 def get_legacy_name(original_name, version):
-    return 'legacy_%s_%s' % (version.replace('.', '_'), original_name)
+    return f"legacy_{version.replace('.', '_')}_{original_name}"
 
 
 def rename_columns(cr, column_spec, version):
@@ -17,10 +17,8 @@ def rename_columns(cr, column_spec, version):
                 new = get_legacy_name(old, version)
             logger.info("table %s, column %s: renaming to %s",
                         table, old, new)
-            cr.execute('ALTER TABLE "%s" RENAME "%s" TO "%s"'
-                       % (table, old, new,))
-            cr.execute('DROP INDEX IF EXISTS "%s_%s_index"'
-                       % (table, old))
+            cr.execute(f'ALTER TABLE "{table}" RENAME "{old}" TO "{new}"')
+            cr.execute(f'DROP INDEX IF EXISTS "{table}_{old}_index"')
 
 column_renames = {
     'runbot_repo': [

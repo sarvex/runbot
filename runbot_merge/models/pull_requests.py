@@ -83,14 +83,12 @@ All substitutions are tentatively applied sequentially to the input.
         if 'status_ids' in vals:
             return super().create(vals)
 
-        st = vals.pop('required_statuses', 'legal/cla,ci/runbot')
-        if st:
+        if st := vals.pop('required_statuses', 'legal/cla,ci/runbot'):
             vals['status_ids'] = [(0, 0, {'context': c}) for c in st.split(',')]
         return super().create(vals)
 
     def write(self, vals):
-        st = vals.pop('required_statuses', None)
-        if st:
+        if st := vals.pop('required_statuses', None):
             vals['status_ids'] = [(5, 0, {})] + [(0, 0, {'context': c}) for c in st.split(',')]
         return super().write(vals)
 
@@ -113,19 +111,21 @@ All substitutions are tentatively applied sequentially to the input.
         if not self.project_id._has_branch(pr['base']['ref']):
             _logger.info("Tasked with loading PR %d for un-managed branch %s:%s, ignoring",
                          number, self.name, pr['base']['ref'])
-            feedback({
-                'repository': self.id,
-                'pull_request': number,
-                'message': "I'm sorry. Branch `{}` is not within my remit.".format(pr['base']['ref']),
-            })
+            feedback(
+                {
+                    'repository': self.id,
+                    'pull_request': number,
+                    'message': f"I'm sorry. Branch `{pr['base']['ref']}` is not within my remit.",
+                }
+            )
             return
 
-        # if the PR is already loaded, check... if the heads match?
-        pr_id = self.env['runbot_merge.pull_requests'].search([
-            ('repository.name', '=', pr['base']['repo']['full_name']),
-            ('number', '=', number),
-        ])
-        if pr_id:
+        if pr_id := self.env['runbot_merge.pull_requests'].search(
+            [
+                ('repository.name', '=', pr['base']['repo']['full_name']),
+                ('number', '=', number),
+            ]
+        ):
             # TODO: edited, maybe (requires crafting a 'changes' object)
             r = controllers.handle_pr(self.env, {
                 'action': 'synchronize',
@@ -299,7 +299,7 @@ class Branch(models.Model):
 
         rows = self._stageable()
         priority = rows[0][0] if rows else -1
-        if priority == 0 or priority == 1:
+        if priority in [0, 1]:
             # p=0 take precedence over all else
             # p=1 allows merging a fix inside / ahead of a split (e.g. branch
             # is broken or widespread false positive) without having to cancel
@@ -340,7 +340,7 @@ class Branch(models.Model):
                     if len(e.args) > 1 and e.args[1]:
                         message = e.args[1]
                     else:
-                        message = "Unable to stage PR (%s)" % e.__context__
+                        message = f"Unable to stage PR ({e.__context__})"
                     pr.state = 'error'
                     self.env['runbot_merge.pull_requests.feedback'].create({
                         'repository': pr.repository.id,
@@ -362,7 +362,7 @@ class Branch(models.Model):
             trailer = ''
             if heads:
                 trailer = '\n'.join(
-                    'Runbot-dependency: %s:%s' % (repo, h)
+                    f'Runbot-dependency: {repo}:{h}'
                     for repo, h in heads.items()
                     if not repo.endswith('^')
                 )
@@ -382,7 +382,7 @@ For-Commit-Id: %s
 
             # $repo is the head to check, $repo^ is the head to merge (they
             # might be the same)
-            heads[repo.name + '^'] = it['head']
+            heads[f'{repo.name}^'] = it['head']
             heads[repo.name] = dummy_head['sha']
             self.env.cr.execute(
                 "INSERT INTO runbot_merge_commit (sha, to_check, statuses) "
@@ -411,11 +411,9 @@ For-Commit-Id: %s
             it['gh'].set_ref(refname, staging_head)
             # asserts that the new head is visible through the api
             head = it['gh'].head(refname)
-            assert head == staging_head,\
-                "[api] updated %s:%s to %s but found %s" % (
-                    r.name, refname,
-                    staging_head, head,
-                )
+            assert (
+                head == staging_head
+            ), f"[api] updated {r.name}:{refname} to {staging_head} but found {head}"
 
             i = itertools.count()
             @utils.backoff(delays=WAIT_FOR_VISIBILITY, exc=TimeoutError)
@@ -434,10 +432,12 @@ For-Commit-Id: %s
                 )
                 raise TimeoutError("Staged head not updated after %d seconds" % sum(WAIT_FOR_VISIBILITY))
 
-        logger.info("Created staging %s (%s) to %s", st, ', '.join(
-            '%s[%s]' % (batch, batch.prs)
-            for batch in staged
-        ), st.target.name)
+        logger.info(
+            "Created staging %s (%s) to %s",
+            st,
+            ', '.join(f'{batch}[{batch.prs}]' for batch in staged),
+            st.target.name,
+        )
         return st
 
     def _check_visibility(self, repo, branch_name, expected_head, token):
@@ -447,15 +447,18 @@ For-Commit-Id: %s
         # v1 protocol provides URL for ref discovery: https://github.com/git/git/blob/6e0cc6776106079ed4efa0cc9abace4107657abf/Documentation/technical/http-protocol.txt#L187
         # for more complete client this is also the capabilities discovery and
         # the "entry point" for the service
-        url = 'https://github.com/{}.git/info/refs?service=git-upload-pack'.format(repo.name)
+        url = f'https://github.com/{repo.name}.git/info/refs?service=git-upload-pack'
         with requests.get(url, stream=True, auth=(token, '')) as resp:
             if not resp.ok:
                 return False
-            for head, ref in parse_refs_smart(resp.raw.read):
-                if ref != ('refs/heads/' + branch_name):
-                    continue
-                return head == expected_head
-            return False
+            return next(
+                (
+                    head == expected_head
+                    for head, ref in parse_refs_smart(resp.raw.read)
+                    if ref == f'refs/heads/{branch_name}'
+                ),
+                False,
+            )
 
 ACL = collections.namedtuple('ACL', 'is_admin is_reviewer is_author')
 class PullRequests(models.Model):
@@ -613,18 +616,20 @@ class PullRequests(models.Model):
             if not (pr.squash or pr.merge_method):
                 pr.blocked = 'has no merge method'
                 continue
-            other_unset = next((p for p in linked if not (p.squash or p.merge_method)), None)
-            if other_unset:
-                pr.blocked = "linked PR %s has no merge method" % other_unset.display_name
+            if other_unset := next(
+                (p for p in linked if not (p.squash or p.merge_method)), None
+            ):
+                pr.blocked = f"linked PR {other_unset.display_name} has no merge method"
                 continue
 
             # check if any PR in the batch is p=0 and none is in error
             if any(p.priority == 0 for p in (pr | linked)):
                 if pr.state == 'error':
                     pr.blocked = "in error"
-                other_error = next((p for p in linked if p.state == 'error'), None)
-                if other_error:
-                    pr.blocked = "linked pr %s in error" % other_error.display_name
+                if other_error := next(
+                    (p for p in linked if p.state == 'error'), None
+                ):
+                    pr.blocked = f"linked pr {other_error.display_name} in error"
                 # if none is in error then none is blocked because p=0
                 # "unblocks" the entire batch
                 continue
@@ -633,15 +638,12 @@ class PullRequests(models.Model):
                 pr.blocked = 'not ready'
                 continue
 
-            unready = next((p for p in linked if p.state != 'ready'), None)
-            if unready:
-                pr.blocked = 'linked pr %s is not ready' % unready.display_name
+            if unready := next((p for p in linked if p.state != 'ready'), None):
+                pr.blocked = f'linked pr {unready.display_name} is not ready'
                 continue
 
     def _get_overrides(self):
-        if self:
-            return json.loads(self.overrides)
-        return {}
+        return json.loads(self.overrides) if self else {}
 
     @api.depends('head', 'repository.status_ids', 'overrides')
     def _compute_statuses(self):
@@ -678,18 +680,25 @@ class PullRequests(models.Model):
             return
 
         if target and not repo.project_id._has_branch(target):
-            self.env['runbot_merge.pull_requests.feedback'].create({
-                'repository': repo.id,
-                'pull_request': number,
-                'message': "I'm sorry. Branch `{}` is not within my remit.".format(target),
-            })
+            self.env['runbot_merge.pull_requests.feedback'].create(
+                {
+                    'repository': repo.id,
+                    'pull_request': number,
+                    'message': f"I'm sorry. Branch `{target}` is not within my remit.",
+                }
+            )
             return
 
-        pr = self.search([
-            ('repository', '=', repo.id),
-            ('number', '=', number,)
-        ])
-        if pr:
+        if pr := self.search(
+            [
+                ('repository', '=', repo.id),
+                (
+                    'number',
+                    '=',
+                    number,
+                ),
+            ]
+        ):
             return pr
 
         Fetch = self.env['runbot_merge.fetch_job']
@@ -787,7 +796,8 @@ class PullRequests(models.Model):
             else:
                 pstr = '={}'.format(param)
 
-            return '%s%s' % (command, pstr)
+            return f'{command}{pstr}'
+
         msgs = []
         for command, param in commands:
             ok = False
@@ -879,15 +889,17 @@ class PullRequests(models.Model):
                         self.merge_method = param
                         ok = True
                         explanation = next(label for value, label in type(self).merge_method.selection if value == param)
-                        Feedback.create({
-                            'repository': self.repository.id,
-                            'pull_request': self.number,
-                            'message':"Merge method set to %s" % explanation
-                        })
+                        Feedback.create(
+                            {
+                                'repository': self.repository.id,
+                                'pull_request': self.number,
+                                'message': f"Merge method set to {explanation}",
+                            }
+                        )
             elif command == 'override':
                 overridable = author.override_rights\
-                    .filtered(lambda r: not r.repository_id or (r.repository_id == self.repository))\
-                    .mapped('context')
+                        .filtered(lambda r: not r.repository_id or (r.repository_id == self.repository))\
+                        .mapped('context')
                 if param in overridable:
                     self.overrides = json.dumps({
                         **json.loads(self.overrides),
@@ -904,7 +916,7 @@ class PullRequests(models.Model):
                         c.create({'sha': self.head, 'statuses': '{}'})
                     ok = True
                 else:
-                    msg = f"You are not allowed to override this status."
+                    msg = "You are not allowed to override this status."
             else:
                 # ignore unknown commands
                 continue
@@ -925,7 +937,7 @@ class PullRequests(models.Model):
             msg.append('applied ' + ' '.join(applied))
         if ignored:
             ignoredstr = ' '.join(ignored)
-            msg.append('ignored ' + ignoredstr)
+            msg.append(f'ignored {ignoredstr}')
 
         if msgs:
             msgs.insert(0, "I'm sorry, @{}.".format(login))
@@ -987,23 +999,27 @@ class PullRequests(models.Model):
             self._notify_ci_failed(ci)
 
     def _notify_merged(self, gh, payload):
-        deployment = gh('POST', 'deployments', json={
-            'ref': self.head, 'environment': 'merge',
-            'description': "Merge %s into %s" % (self.display_name, self.target.name),
-            'task': 'merge',
-            'auto_merge': False,
-            'required_contexts': [],
-        }).json()
-        gh('POST', 'deployments/{}/statuses'.format(deployment['id']), json={
-            'state': 'success',
-            'target_url': 'https://github.com/{}/commit/{}'.format(
-                self.repository.name,
-                payload['sha'],
-            ),
-            'description': "Merged %s in %s at %s" % (
-                self.display_name, self.target.name, payload['sha']
-            )
-        })
+        deployment = gh(
+            'POST',
+            'deployments',
+            json={
+                'ref': self.head,
+                'environment': 'merge',
+                'description': f"Merge {self.display_name} into {self.target.name}",
+                'task': 'merge',
+                'auto_merge': False,
+                'required_contexts': [],
+            },
+        ).json()
+        gh(
+            'POST',
+            f"deployments/{deployment['id']}/statuses",
+            json={
+                'state': 'success',
+                'target_url': f"https://github.com/{self.repository.name}/commit/{payload['sha']}",
+                'description': f"Merged {self.display_name} in {self.target.name} at {payload['sha']}",
+            },
+        )
 
     def _statuses_equivalent(self, a, b):
         """ Check if two statuses are *equivalent* meaning the description field
@@ -1070,8 +1086,7 @@ class PullRequests(models.Model):
             ], limit=1)
 
         message = description['title'].strip()
-        body = description['body'] and description['body'].strip()
-        if body:
+        if body := description['body'] and description['body'].strip():
             message += '\n\n' + body
         return self.env['runbot_merge.pull_requests'].create({
             'state': 'opened' if description['state'] == 'open' else 'closed',
@@ -1092,8 +1107,7 @@ class PullRequests(models.Model):
 
         w = super().write(vals)
 
-        newhead = vals.get('head')
-        if newhead:
+        if newhead := vals.get('head'):
             c = self.env['runbot_merge.commit'].search([('sha', '=', newhead)])
             self._validate(json.loads(c.statuses or '{}'))
         return w
@@ -1244,9 +1258,7 @@ class PullRequests(models.Model):
             raise exceptions.Mismatch(self.head, pr_head, commits == 1)
 
         if self.reviewed_by and self.reviewed_by.name == self.reviewed_by.github_login:
-            # XXX: find other trigger(s) to sync github name?
-            gh_name = gh.user(self.reviewed_by.github_login)['name']
-            if gh_name:
+            if gh_name := gh.user(self.reviewed_by.github_login)['name']:
                 self.reviewed_by.name = gh_name
 
         # update pr message in case an update was missed
@@ -1508,11 +1520,14 @@ class Feedback(models.Model):
                     except json.JSONDecodeError:
                         pass
                     else:
-                        pr_to_notify = self.env['runbot_merge.pull_requests'].search([
-                            ('repository', '=', repo.id),
-                            ('number', '=', f.pull_request),
-                        ])
-                        if pr_to_notify:
+                        if pr_to_notify := self.env[
+                            'runbot_merge.pull_requests'
+                        ].search(
+                            [
+                                ('repository', '=', repo.id),
+                                ('number', '=', f.pull_request),
+                            ]
+                        ):
                             pr_to_notify._notify_merged(gh, data)
                             message = None
                 if message:
@@ -1541,13 +1556,11 @@ class Commit(models.Model):
 
     def create(self, values):
         values['to_check'] = True
-        r = super(Commit, self).create(values)
-        return r
+        return super(Commit, self).create(values)
 
     def write(self, values):
         values.setdefault('to_check', True)
-        r = super(Commit, self).write(values)
-        return r
+        return super(Commit, self).write(values)
 
     def _notify(self):
         Stagings = self.env['runbot_merge.stagings']
@@ -1557,18 +1570,18 @@ class Commit(models.Model):
             try:
                 c.to_check = False
                 st = json.loads(c.statuses)
-                pr = PRs.search([('head', '=', c.sha)])
-                if pr:
+                if pr := PRs.search([('head', '=', c.sha)]):
                     pr._validate(st)
 
-                stagings = Stagings.search([('heads', 'ilike', c.sha)]).filtered(
+                if stagings := Stagings.search(
+                    [('heads', 'ilike', c.sha)]
+                ).filtered(
                     lambda s, h=c.sha: any(
                         head == h
                         for repo, head in json.loads(s.heads).items()
                         if not repo.endswith('^')
                     )
-                )
-                if stagings:
+                ):
                     stagings._validate()
             except Exception:
                 _logger.exception("Failed to apply commit %s (%s)", c, c.sha)
@@ -1709,7 +1722,7 @@ class Stagings(models.Model):
         if not self:
             return
 
-        _logger.info("Cancelling staging %s: " + reason, self, *args)
+        _logger.info(f"Cancelling staging %s: {reason}", self, *args)
         self.mapped('batch_ids').write({'active': False})
         self.write({
             'active': False,
@@ -1722,11 +1735,13 @@ class Stagings(models.Model):
         prs = prs or self.batch_ids.prs
         prs.write({'state': 'error'})
         for pr in prs:
-            self.env['runbot_merge.pull_requests.feedback'].create({
-                'repository': pr.repository.id,
-                'pull_request': pr.number,
-                'message':"Staging failed: %s" % message
-            })
+            self.env['runbot_merge.pull_requests.feedback'].create(
+                {
+                    'repository': pr.repository.id,
+                    'pull_request': pr.number,
+                    'message': f"Staging failed: {message}",
+                }
+            )
 
         self.batch_ids.write({'active': False})
         self.write({
@@ -1762,7 +1777,7 @@ class Stagings(models.Model):
         # single batch => the staging is an unredeemable failure
         if self.state != 'failure':
             # timed out, just mark all PRs (wheee)
-            self.fail('timed out (>{} minutes)'.format(self.target.project_id.ci_timeout))
+            self.fail(f'timed out (>{self.target.project_id.ci_timeout} minutes)')
             return False
 
         # try inferring which PR failed and only mark that one
@@ -1797,9 +1812,9 @@ class Stagings(models.Model):
             if status.get('target_url'):
                 viewmore = ' (view more at %(target_url)s)' % status
             if pr:
-                self.fail("%s%s" % (reason, viewmore), pr)
+                self.fail(f"{reason}{viewmore}", pr)
             else:
-                self.fail('%s on %s%s' % (reason, head, viewmore))
+                self.fail(f'{reason} on {head}{viewmore}')
             return False
 
         # the staging failed but we don't have a specific culprit, fail
@@ -1823,8 +1838,8 @@ class Stagings(models.Model):
             return
 
         logger.info("Checking active staging %s (state=%s)", self, self.state)
-        project = self.target.project_id
         if self.state == 'success':
+            project = self.target.project_id
             gh = {repo.name: repo.github() for repo in project.repo_ids.having_branch(self.target)}
             staging_heads = json.loads(self.heads)
             self.env.cr.execute('''
@@ -1903,7 +1918,7 @@ class Stagings(models.Model):
         """
         # FIXME: would make sense for FFE to be richer, and contain the repo name
         repo_name = None
-        tmp_target = 'tmp.' + self.target.name
+        tmp_target = f'tmp.{self.target.name}'
         # first force-push the current targets to all tmps
         for repo_name in staging_heads.keys():
             if repo_name.endswith('^'):
@@ -1914,7 +1929,9 @@ class Stagings(models.Model):
         for repo_name, head in staging_heads.items():
             if repo_name.endswith('^'):
                 continue
-            gh[repo_name].fast_forward(tmp_target, staging_heads.get(repo_name + '^') or head)
+            gh[repo_name].fast_forward(
+                tmp_target, staging_heads.get(f'{repo_name}^') or head
+            )
         # there is still a race condition here, but it's way
         # lower than "the entire staging duration"...
         first = True
@@ -1928,7 +1945,7 @@ class Stagings(models.Model):
                     # otherwise merge the regular (CI'd) head
                     gh[repo_name].fast_forward(
                         self.target.name,
-                        staging_heads.get(repo_name + '^') or head
+                        staging_heads.get(f'{repo_name}^') or head,
                     )
                 except exceptions.FastForwardError:
                     # The GH API regularly fails us. If the failure does not
@@ -1972,9 +1989,13 @@ class Batch(models.Model):
             repos = self.env['runbot_merge.repository']
             for pr in batch.prs:
                 if pr.target != batch.target:
-                    raise ValidationError("A batch and its PRs must have the same branch, got %s and %s" % (batch.target, pr.target))
+                    raise ValidationError(
+                        f"A batch and its PRs must have the same branch, got {batch.target} and {pr.target}"
+                    )
                 if pr.repository in repos:
-                    raise ValidationError("All prs of a batch must have different target repositories, got a duplicate %s on %s" % (pr.repository, pr))
+                    raise ValidationError(
+                        f"All prs of a batch must have different target repositories, got a duplicate {pr.repository} on {pr}"
+                    )
                 repos |= pr.repository
 
     def stage(self, meta, prs):
@@ -1992,7 +2013,7 @@ class Batch(models.Model):
                 pr.display_name, pr.target.name, pr.squash
             )
 
-            target = 'tmp.{}'.format(pr.target.name)
+            target = f'tmp.{pr.target.name}'
             original_head = gh.head(target)
             try:
                 try:
@@ -2007,9 +2028,9 @@ class Batch(models.Model):
                     # updated it (despite later steps failing)
                     gh.set_ref(target, original_head)
                     # then reset every previous update
-                    for to_revert in new_heads.keys():
+                    for to_revert in new_heads:
                         it = meta[to_revert.repository]
-                        it['gh'].set_ref('tmp.{}'.format(to_revert.target.name), it['head'])
+                        it['gh'].set_ref(f'tmp.{to_revert.target.name}', it['head'])
                     raise
             except github.MergeError:
                 raise exceptions.MergeError(pr)
@@ -2083,9 +2104,7 @@ def state_(statuses, name):
     """ Fetches the status state """
     name = name.strip()
     v = statuses.get(name)
-    if isinstance(v, dict):
-        return v.get('state')
-    return v
+    return v.get('state') if isinstance(v, dict) else v
 def to_status(v):
     """ Converts old-style status values (just a state string) to new-style
     (``{state, target_url, description}``)
@@ -2103,9 +2122,7 @@ def parse_refs_smart(read):
     """ yields pkt-line data (bytes), or None for flush lines """
     def read_line():
         length = int(read(4), 16)
-        if length == 0:
-            return None
-        return read(length - 4)
+        return None if length == 0 else read(length - 4)
 
     header = read_line()
     assert header == b'# service=git-upload-pack\n', header
@@ -2178,8 +2195,7 @@ class Message:
                     body = []
                 continue
 
-            h = HEADER.match(line)
-            if h:
+            if h := HEADER.match(line):
                 # c-a-b = special case from an existing test, not sure if actually useful?
                 if in_headers or h.group(1).lower() == 'co-authored-by':
                     headers.append(h.groups())

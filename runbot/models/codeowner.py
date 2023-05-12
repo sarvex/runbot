@@ -22,7 +22,7 @@ class Codeowner(models.Model):
             try:
                 r = re.compile(rec.regex)
             except re.error as e:
-                raise ValidationError("Unable to compile regular expression: %s" % e)
+                raise ValidationError(f"Unable to compile regular expression: {e}")
 
     @api.constrains('version_domain')
     def _validate_version_domain(self):
@@ -30,7 +30,7 @@ class Codeowner(models.Model):
             try:
                 self._match_version(self.env.ref('runbot.bundle_master').version_id)
             except Exception as e:
-                raise ValidationError("Unable to validate version_domain: %s" % e)
+                raise ValidationError(f"Unable to validate version_domain: {e}")
 
     def _get_version_domain(self):
         """ Helper to get the evaluated version domain """
